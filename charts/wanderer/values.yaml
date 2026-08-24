@@ -261,6 +261,84 @@ search:
   affinity: {}
   topologySpreadConstraints: []
 
+garminSync:
+  # Disabled by default. Enable only after creating the required API-token
+  # Secret and, for Garmin Connect, the credential Secret.
+  enabled: false
+  schedule: "0 */6 * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  backoffLimit: 2
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 86400
+  image:
+    repository: ghcr.io/nabsku/wanderer-garmin-sync
+    tag: "0.2.0"
+    digest: ""
+    pullPolicy: IfNotPresent
+  sources:
+    garminConnect:
+      enabled: false
+      secret:
+        existingSecret: ""
+        emailKey: garmin-email
+        passwordKey: garmin-password
+      # original preserves the Garmin FIT file. gpx uses Garmin's GPX export.
+      downloadFormat: original
+      pageSize: 1000
+      maxPages: 2000
+    officialExport:
+      enabled: false
+  # preserve uploads FIT files. Set to gpx only when a downstream consumer
+  # requires GPX; the original FIT remains in the archive PVC.
+  fitMode: preserve
+  wanderer:
+    url: ""
+    existingSecret: ""
+    tokenKey: api-token
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 50Gi
+    keep: true
+    annotations: {}
+  limits:
+    maxFileBytes: 268435456
+    maxZipMembers: 10000
+    maxZipUncompressedBytes: 2147483648
+  requestTimeoutSeconds: 60
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits: {}
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  terminationGracePeriodSeconds: 30
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
 secret:
   # Leave empty to create a namespaced Secret. Values are generated at install
   # time and retained across upgrades through Helm lookup. For GitOps, prefer
@@ -288,6 +366,9 @@ networkPolicy:
   webEgress: []
   databaseEgress: []
   searchEgress: []
+  # When NetworkPolicy is enabled, these raw egress rules permit the sync job
+  # to reach Garmin Connect. Use the narrowest rules supported by the CNI.
+  garminSyncEgress: []
 
 commonLabels: {}
 imagePullSecrets: []

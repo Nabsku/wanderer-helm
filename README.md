@@ -8,7 +8,7 @@ This chart deploys the three components used by Wanderer `v0.20.0`:
 - `flomp/wanderer-db:v0.20.0` (PocketBase)
 - `getmeili/meilisearch:v1.36.0`
 
-The chart is versioned independently. The first chart release is `0.1.0`.
+The chart is versioned independently. The initial chart release is `0.1.0`; the optional Garmin synchronizer is part of the next `0.2.0` release.
 
 ## Important production contracts
 
@@ -45,6 +45,8 @@ helm install wanderer \
 ```
 
 The production example is a starting point only. Replace the example hosts, storage class, TLS Secret names, resource budgets, and external Secret reference before use.
+
+The `0.2.0` synchronizer changes are currently on the feature branch. Do not use `--version 0.2.0` until that chart and its companion image have been published.
 
 For a local smoke installation:
 
@@ -108,6 +110,53 @@ If `networkPolicy.enabled` is true, provide:
 
 The chart always adds same-namespace service traffic required by the three workloads and DNS egress. An empty `webIngress` intentionally denies external access.
 
+## Optional Garmin synchronizer
+
+The chart includes an opt-in `garminSync` CronJob. It uses one shared pipeline for:
+
+- automated Garmin Connect activity downloads through the community `garminconnect` wrapper;
+- official Garmin account-export ZIP files placed in the synchronizer PVC inbox.
+
+A CronJob is used instead of a sidecar. It gives each sync a bounded run, prevents overlapping runs with `concurrencyPolicy: Forbid`, and keeps the RWO synchronizer PVC separate from Wanderer's web upload volume.
+
+Wanderer `v0.20.0` accepts FIT files directly. The default `garminSync.fitMode: preserve` therefore keeps the original FIT file and uploads it without conversion. Set `fitMode: gpx` only when a GPX-only consumer needs the conversion; the raw FIT remains in the archive PVC. The synchronizer uses `fitdecode` and `gpxpy` for this conversion.
+
+The Garmin Connect path is not an official Garmin personal API. It may break when Garmin changes authentication. The synchronizer fails with an explicit MFA-required error rather than prompting inside a CronJob. Bootstrap the token store in a trusted interactive workflow, then place it on the synchronizer PVC; otherwise use the official export path. The official account-wide export is more stable but is requested manually through Garmin and delivered as a ZIP.
+
+Create two Secrets before enabling both sources:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wanderer-garmin-sync
+stringData:
+  api-token: "<Wanderer API token>"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: garmin-connect
+stringData:
+  garmin-email: "<Garmin email>"
+  garmin-password: "<Garmin password>"
+```
+
+Then use `examples/values-garmin-sync.yaml` as a starting point. Keep the feature disabled until the Secrets and storage are ready. The CronJob stores the idempotency manifest, Garmin token state, raw downloads, and official export files on a separate PVC. It does **not** mount the web upload PVC, so it does not depend on `ReadWriteMany` storage. Uploads go through Wanderer’s internal API with duplicate suppression.
+
+For the official path, request Garmin's account export manually, place the resulting ZIP in `/data/inbox` on the synchronizer PVC, and trigger a one-shot run when needed:
+
+```bash
+kubectl create job --from=cronjob/wanderer-garmin-sync wanderer-garmin-sync-manual \
+  --namespace wanderer
+```
+
+Use your cluster's approved PVC file-transfer method to place the ZIP in the inbox before starting that Job. The synchronizer archives the accepted route files and records their digests so a repeated run does not upload them again.
+
+The synchronizer PVC contains raw Garmin exports, route files, and the Garmin token store. Treat it as sensitive data: use encrypted storage, restrict PVC access, and include it in backup and retention policies.
+
+If `networkPolicy.enabled` is true and Garmin Connect sync is enabled, add a narrow `networkPolicy.garminSyncEgress` rule for HTTPS access. Kubernetes NetworkPolicy cannot express a DNS hostname by itself; use the narrowest IP or CNI-specific FQDN policy available in your cluster.
+
 ## Resource and upload budgets
 
 The chart starts with requests of 100m CPU and 256 MiB for web/PocketBase, and 100m CPU plus 512 MiB for Meilisearch. These are bootstrap budgets, not performance guarantees. Measure CPU, memory, search indexing time, and upload failures, then adjust `*.resources`.
@@ -147,6 +196,9 @@ helm package charts/wanderer
 - [Environment configuration](https://wanderer.to/run/environment-configuration)
 - [Backup guidance](https://wanderer.to/run/backend-configuration/backup-server)
 - [Plugin installation](https://wanderer.to/run/installation/plugins)
+- [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)
+- [fitdecode](https://github.com/polyvertex/fitdecode)
+- [gpxpy](https://github.com/tkrajina/gpxpy)
 
 ## License
 

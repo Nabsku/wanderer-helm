@@ -39,8 +39,16 @@ jobs:
       - name: Install render-test dependency
         run: python -m pip install --disable-pip-version-check --no-input PyYAML==6.0.2
 
+      - name: Install synchronizer dependencies
+        run: python -m pip install --disable-pip-version-check --no-input -r sync/requirements.txt
+
       - name: Run chart tests
         run: tests/render.sh
+
+      - name: Run synchronizer unit tests
+        env:
+          PYTHONPATH: sync
+        run: python -m unittest discover -s tests/sync -v
 
       - name: Check tag and chart version
         id: version
@@ -56,6 +64,41 @@ jobs:
           chart_version="$(python -c 'import yaml; print(yaml.safe_load(open("charts/wanderer/Chart.yaml"))["version"])')"
           test "$version" = "$chart_version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR for synchronizer image
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push synchronizer image
+        id: sync-image
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          metadata="$RUNNER_TEMP/wanderer-garmin-sync-metadata.json"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --tag "ghcr.io/${OWNER,,}/wanderer-garmin-sync:${VERSION}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            --metadata-file "$metadata" \
+            --push sync
+          digest="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["containerimage.digest"])' "$metadata")"
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "buildx did not return an image digest" >&2; exit 1 ;;
+          esac
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Package chart
         run: helm package "$CHART_DIR" --destination dist
@@ -75,17 +118,15 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.7.0
 
-      - name: Log in to GHCR for Cosign
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_ACTOR: ${{ github.actor }}
-        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-
       - name: Sign OCI chart
         env:
           OWNER: ${{ github.repository_owner }}
           VERSION: ${{ steps.version.outputs.version }}
-        run: cosign sign --yes "ghcr.io/${OWNER,,}/charts/wanderer:${VERSION}"
+          IMAGE_DIGEST: ${{ steps.sync-image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "ghcr.io/${OWNER,,}/charts/wanderer:${VERSION}"
+          cosign sign --yes "ghcr.io/${OWNER,,}/wanderer-garmin-sync@${IMAGE_DIGEST}"
 
       - name: Create GitHub release
         env:

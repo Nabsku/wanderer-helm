@@ -65,7 +65,7 @@ def assert_common(docs: list[dict]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("manifest")
-    parser.add_argument("--mode", choices=["minimal", "production", "network"], required=True)
+    parser.add_argument("--mode", choices=["minimal", "production", "network", "garmin"], required=True)
     args = parser.parse_args()
     docs = load(args.manifest)
     assert_common(docs)
@@ -78,7 +78,7 @@ def main() -> None:
     elif args.mode == "production":
         assert {doc["metadata"]["name"] for doc in ingresses} == {"wanderer", "wanderer-database"}
         assert not by_kind(docs, "Secret"), "production example must use existingSecret"
-    else:
+    elif args.mode == "network":
         assert not ingresses
         assert {doc["metadata"]["name"] for doc in policies} == {
             "wanderer-web",
@@ -88,6 +88,20 @@ def main() -> None:
         web_policy = one(docs, "NetworkPolicy", "wanderer-web")
         assert web_policy["spec"]["ingress"]
         assert any(rule.get("to") for rule in web_policy["spec"]["egress"])
+    else:
+        cronjob = one(docs, "CronJob", "wanderer-garmin-sync")
+        assert one(docs, "PersistentVolumeClaim", "wanderer-garmin-sync")
+        pod = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+        container = pod["containers"][0]
+        env = env_map(container)
+        assert env["SYNC_SOURCES"]["value"] == "garmin,official"
+        assert env["WANDERER_API_TOKEN"]["valueFrom"]["secretKeyRef"]["name"] == "wanderer-garmin-sync"
+        assert env["GARMIN_EMAIL"]["valueFrom"]["secretKeyRef"]["name"] == "garmin-connect"
+        assert env["GARMIN_PASSWORD"]["valueFrom"]["secretKeyRef"]["name"] == "garmin-connect"
+        assert container["securityContext"]["readOnlyRootFilesystem"] is True
+        assert pod["automountServiceAccountToken"] is False
+        assert not ingresses
+        assert not policies
     print(f"{args.mode}: {len(docs)} manifests verified")
 
 
