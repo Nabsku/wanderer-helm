@@ -1,0 +1,20 @@
+web:
+  origin: https://wanderer.example.internal
+  config:
+    publicPocketbaseURL: https://wanderer-pb.example.internal
+networkPolicy:
+  enabled: true
+  webIngress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+  webEgress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+  databaseEgress: []
+  searchEgress: []

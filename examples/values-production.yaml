@@ -1,0 +1,54 @@
+# Production starting point. Replace host, storage class, and resource budgets.
+# Manage secret material outside Helm and reference it here.
+web:
+  origin: https://wanderer.example.internal
+  config:
+    publicPocketbaseURL: https://wanderer-pb.example.internal
+    disableSignup: true
+    privateInstance: true
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: wanderer.example.internal
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: wanderer-tls
+        hosts:
+          - wanderer.example.internal
+  persistence:
+    storageClass: fast-ssd
+    accessModes:
+      - ReadWriteOnce
+    size: 50Gi
+
+database:
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: wanderer-pb.example.internal
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: wanderer-pb-tls
+        hosts:
+          - wanderer-pb.example.internal
+  persistence:
+    data:
+      storageClass: fast-ssd
+      size: 20Gi
+    plugins:
+      storageClass: fast-ssd
+      size: 2Gi
+
+search:
+  persistence:
+    storageClass: fast-ssd
+    size: 20Gi
+
+secret:
+  existingSecret: wanderer-secrets

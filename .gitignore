@@ -1,0 +1,7 @@
+# Generated files
+.DS_Store
+*.tgz
+
+# Local render output
+.dist/
+.tmp/

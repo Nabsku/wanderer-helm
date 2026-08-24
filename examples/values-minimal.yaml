@@ -1,0 +1,8 @@
+# Minimal local installation. Replace the origin before production use.
+web:
+  origin: http://localhost:3000
+  config:
+    publicPocketbaseURL: http://localhost:8090
+    disableSignup: false
+  ingress:
+    enabled: false

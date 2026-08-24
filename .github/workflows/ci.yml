@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v4.2.3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install render-test dependency
+        run: python -m pip install --disable-pip-version-check --no-input PyYAML==6.0.2
+
+      - name: Run chart tests
+        run: tests/render.sh
+
+      - name: Validate production manifests
+        env:
+          PB_KEY: 0123456789abcdef0123456789abcdef
+          MEILI_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef
+        run: |
+          set -euo pipefail
+          helm template wanderer charts/wanderer \
+            --namespace wanderer \
+            --values examples/values-production.yaml \
+            --set "secret.pocketbaseEncryptionKey=${PB_KEY}" \
+            --set "secret.meiliMasterKey=${MEILI_KEY}" \
+            | docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 \
+                -strict -summary -kubernetes-version 1.25.0
+
+      - name: Validate NetworkPolicy manifests
+        run: |
+          set -euo pipefail
+          helm template wanderer charts/wanderer \
+            --namespace wanderer \
+            --values examples/values-networkpolicy.yaml \
+            | docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 \
+                -strict -summary -kubernetes-version 1.25.0

@@ -1,0 +1,25 @@
+{{- if .Values.web.origin }}
+1. Wanderer is installed.
+
+   URL: {{ .Values.web.origin }}
+
+2. Storage is intentionally retained on Helm uninstall when `*.persistence.*.keep`
+   is true. Delete the PVCs manually only after confirming the backup.
+
+3. The chart creates encryption material when `secret.existingSecret` is empty.
+   For GitOps, use an external secret and set:
+
+     secret.existingSecret: <secret-name>
+
+   The referenced Secret must contain:
+
+     {{ .Values.secret.keys.pocketbaseEncryption }}
+     {{ .Values.secret.keys.meiliMaster }}
+
+4. The default upload limit is {{ .Values.web.config.bodySizeLimit }} bytes (100 MiB).
+   Align the ingress/proxy request limit with this value before importing larger files.
+
+5. PocketBase is the source of truth. Meilisearch stores a rebuildable index.
+   Back up the database PVC and plugin PVC; test reindex/recovery before relying on
+   the deployment.
+{{- end }}

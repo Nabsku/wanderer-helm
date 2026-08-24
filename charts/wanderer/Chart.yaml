@@ -1,0 +1,22 @@
+apiVersion: v2
+name: wanderer
+description: Production-oriented Helm chart for the self-hosted Wanderer trail catalogue.
+type: application
+version: 0.1.0
+appVersion: "0.20.0"
+kubeVersion: ">=1.25.0-0"
+icon: https://raw.githubusercontent.com/open-wanderer/wanderer/v0.20.0/web/static/svgs/logo_text_two_line_dark.svg
+home: https://wanderer.to/
+sources:
+  - https://github.com/open-wanderer/wanderer
+keywords:
+  - gps
+  - gpx
+  - trails
+  - maps
+  - self-hosted
+maintainers:
+  - name: Nabsku
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/category: integration-delivery

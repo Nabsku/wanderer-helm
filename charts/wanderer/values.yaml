@@ -1,0 +1,295 @@
+# The public URL used by both the frontend and PocketBase. Set this explicitly.
+# It must match the URL through which users reach Wanderer.
+web:
+  origin: ""
+  replicaCount: 1
+  revisionHistoryLimit: 10
+  strategy:
+    # Recreate avoids two pods mounting a ReadWriteOnce uploads volume during
+    # an upgrade. Use RollingUpdate only with shared RWX storage.
+    type: Recreate
+  image:
+    repository: flomp/wanderer-web
+    tag: v0.20.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+    annotations: {}
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: wanderer.example.internal
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 20Gi
+    keep: true
+    annotations: {}
+  config:
+    # 100 MiB is an explicit upload budget. Increase it when measured input
+    # files require more space and align the ingress proxy limit with it.
+    bodySizeLimit: "104857600"
+    # Must be reachable by both the browser and the web pod. If PocketBase is
+    # exposed through a separate hostname, set that URL explicitly.
+    publicPocketbaseURL: ""
+    disableSignup: true
+    privateInstance: true
+    mapMaxPolylines: 100
+    valhallaURL: https://valhalla1.openstreetmap.de
+    nominatimURL: https://nominatim.openstreetmap.org
+    overpassURL: https://overpass-api.de
+  extraEnv: []
+  extraEnvFrom: []
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits: {}
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  terminationGracePeriodSeconds: 30
+  startupProbe:
+    enabled: true
+    type: http
+    path: /
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 30
+  livenessProbe:
+    enabled: true
+    type: tcp
+    path: /
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    type: http
+    path: /
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+database:
+  # PocketBase uses SQLite and must remain a singleton.
+  replicaCount: 1
+  image:
+    repository: flomp/wanderer-db
+    tag: v0.20.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  service:
+    port: 8090
+    annotations: {}
+  # The frontend needs a browser-reachable PocketBase URL. This optional
+  # ingress exposes the database service; protect /_/ with your ingress policy.
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: wanderer-pb.example.internal
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+  persistence:
+    data:
+      enabled: true
+      existingClaim: ""
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+      size: 20Gi
+      keep: true
+      annotations: {}
+    plugins:
+      enabled: true
+      existingClaim: ""
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+      size: 2Gi
+      keep: true
+      annotations: {}
+  config:
+    cronSyncSchedule: "0 2 * * *"
+    smtp:
+      enabled: false
+      senderAddress: ""
+      senderName: ""
+      host: ""
+      port: ""
+      username: ""
+      password:
+        existingSecret: ""
+        key: smtp-password
+  extraEnv: []
+  extraEnvFrom: []
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits: {}
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  terminationGracePeriodSeconds: 30
+  startupProbe:
+    enabled: true
+    type: http
+    path: /health
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 30
+  livenessProbe:
+    enabled: true
+    type: http
+    path: /health
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    type: http
+    path: /health
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+search:
+  # Meilisearch is a rebuildable index and must remain a singleton here.
+  replicaCount: 1
+  image:
+    repository: getmeili/meilisearch
+    tag: v1.36.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  service:
+    port: 7700
+    annotations: {}
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 20Gi
+    keep: true
+    annotations: {}
+  config:
+    environment: production
+    noAnalytics: true
+  extraEnv: []
+  extraEnvFrom: []
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits: {}
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  terminationGracePeriodSeconds: 30
+  startupProbe:
+    enabled: true
+    type: http
+    path: /health
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 30
+  livenessProbe:
+    enabled: true
+    type: http
+    path: /health
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    type: http
+    path: /health
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+secret:
+  # Leave empty to create a namespaced Secret. Values are generated at install
+  # time and retained across upgrades through Helm lookup. For GitOps, prefer
+  # existingSecret and manage it through an external secret manager.
+  existingSecret: ""
+  name: ""
+  keys:
+    pocketbaseEncryption: pocketbase-encryption-key
+    meiliMaster: meili-master-key
+  pocketbaseEncryptionKey: ""
+  meiliMasterKey: ""
+  annotations: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: false
+
+networkPolicy:
+  enabled: false
+  # These are raw NetworkPolicy peers/egress rules for the web pod. When this
+  # is enabled, the ingress controller or trusted clients must be listed here.
+  webIngress: []
+  webEgress: []
+  databaseEgress: []
+  searchEgress: []
+
+commonLabels: {}
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
