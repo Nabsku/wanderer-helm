@@ -1,0 +1,3 @@
+.tmp-sync-venv
+__pycache__
+*.pyc

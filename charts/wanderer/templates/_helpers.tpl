@@ -81,6 +81,36 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s-search" (include "wanderer.fullname" .) }}
 {{- end }}
 
+{{/* Optional Garmin synchronizer identity. */}}
+{{- define "wanderer.garminSyncName" -}}
+{{- printf "%s-garmin-sync" (include "wanderer.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "wanderer.garminSyncClaimName" -}}
+{{- default (include "wanderer.garminSyncName" .) .Values.garminSync.persistence.existingClaim }}
+{{- end }}
+
+{{/* Internal API URL unless an operator supplies a separate URL. */}}
+{{- define "wanderer.garminSyncWandererURL" -}}
+{{- if .Values.garminSync.wanderer.url }}
+{{- .Values.garminSync.wanderer.url }}
+{{- else }}
+{{- printf "http://%s:%d" (include "wanderer.webServiceName" .) (.Values.web.service.port | int) }}
+{{- end }}
+{{- end }}
+
+{{/* Comma-separated sources consumed by the shared sync image. */}}
+{{- define "wanderer.garminSyncSources" -}}
+{{- $sources := list }}
+{{- if .Values.garminSync.sources.garminConnect.enabled }}
+{{- $sources = append $sources "garmin" }}
+{{- end }}
+{{- if .Values.garminSync.sources.officialExport.enabled }}
+{{- $sources = append $sources "official" }}
+{{- end }}
+{{- join "," $sources }}
+{{- end }}
+
 {{/* Public origin is required because it controls CORS and federation URLs. */}}
 {{- define "wanderer.origin" -}}
 {{- required "web.origin must be set to the public Wanderer URL" .Values.web.origin }}

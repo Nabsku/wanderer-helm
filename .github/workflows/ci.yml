@@ -29,20 +29,28 @@ jobs:
       - name: Install render-test dependency
         run: python -m pip install --disable-pip-version-check --no-input PyYAML==6.0.2
 
+      - name: Install synchronizer dependencies
+        run: python -m pip install --disable-pip-version-check --no-input -r sync/requirements.txt
+
+      - name: Run synchronizer unit tests
+        env:
+          PYTHONPATH: sync
+        run: python -m unittest discover -s tests/sync -v
+
+      - name: Build synchronizer image
+        run: docker build --tag wanderer-garmin-sync:test sync
+
       - name: Run chart tests
         run: tests/render.sh
 
       - name: Validate production manifests
-        env:
-          PB_KEY: 0123456789abcdef0123456789abcdef
-          MEILI_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef
         run: |
           set -euo pipefail
           helm template wanderer charts/wanderer \
             --namespace wanderer \
             --values examples/values-production.yaml \
-            --set "secret.pocketbaseEncryptionKey=${PB_KEY}" \
-            --set "secret.meiliMasterKey=${MEILI_KEY}" \
+            --set-string "secret.pocketbaseEncryptionKey=$(printf '%032d' 0)" \
+            --set-string "secret.meiliMasterKey=$(printf '%048d' 0)" \
             | docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 \
                 -strict -summary -kubernetes-version 1.25.0
 
@@ -52,5 +60,14 @@ jobs:
           helm template wanderer charts/wanderer \
             --namespace wanderer \
             --values examples/values-networkpolicy.yaml \
+            | docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 \
+                -strict -summary -kubernetes-version 1.25.0
+
+      - name: Validate Garmin synchronizer manifests
+        run: |
+          set -euo pipefail
+          helm template wanderer charts/wanderer \
+            --namespace wanderer \
+            --values examples/values-garmin-sync.yaml \
             | docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 \
                 -strict -summary -kubernetes-version 1.25.0

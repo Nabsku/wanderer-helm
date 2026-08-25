@@ -134,4 +134,41 @@ spec:
     {{- with .Values.networkPolicy.searchEgress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
+{{- if .Values.garminSync.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "wanderer.garminSyncName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wanderer.labels" . | nindent 4 }}
+    app.kubernetes.io/component: garmin-sync
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "wanderer.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: garmin-sync
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "wanderer.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: web
+      ports:
+        - protocol: TCP
+          port: {{ .Values.web.service.port }}
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- with .Values.networkPolicy.garminSyncEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
 {{- end }}

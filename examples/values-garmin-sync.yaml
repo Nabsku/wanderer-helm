@@ -1,0 +1,18 @@
+# Enable both sources only after creating the referenced Secrets.
+web:
+  origin: https://wanderer.example.internal
+  config:
+    publicPocketbaseURL: https://wanderer-pb.example.internal
+
+garminSync:
+  enabled: true
+  sources:
+    garminConnect:
+      enabled: true
+      secret:
+        existingSecret: garmin-connect
+    officialExport:
+      enabled: true
+  wanderer:
+    existingSecret: wanderer-garmin-sync
+  fitMode: preserve
