@@ -71,5 +71,7 @@ if helm lint "$chart" -f "$root/examples/values-garmin-sync.yaml" \
 fi
 
 helm package "$chart" --destination "$out"
-test -f "$out/wanderer-0.2.0.tgz"
-printf 'chart package: %s\n' "$out/wanderer-0.2.0.tgz"
+chart_version=$(python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["version"])' "$chart/Chart.yaml")
+package="$out/wanderer-${chart_version}.tgz"
+test -f "$package"
+printf 'chart package: %s\n' "$package"

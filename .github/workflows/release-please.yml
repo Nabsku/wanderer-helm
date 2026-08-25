@@ -1,0 +1,53 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Mint short-lived release automation token
+        id: automation-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_APP_PRIVATE_KEY }}
+          permission-actions: write
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Run Release Please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ steps.automation-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Dispatch release publisher
+        if: steps.release.outputs['charts/wanderer--release_created'] == 'true'
+        env:
+          GH_TOKEN: ${{ steps.automation-token.outputs.token }}
+          RELEASE_TAG: ${{ steps.release.outputs['charts/wanderer--tag_name'] }}
+        run: |
+          set -euo pipefail
+          test -n "$RELEASE_TAG"
+          gh workflow run release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$RELEASE_TAG" \
+            --field "release_tag=$RELEASE_TAG"
