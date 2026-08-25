@@ -20,3 +20,23 @@ maintainers:
 annotations:
   artifacthub.io/license: Apache-2.0
   artifacthub.io/category: integration-delivery
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://github.com/Nabsku/wanderer-helm#readme
+    - name: Support
+      url: https://github.com/Nabsku/wanderer-helm/issues
+  artifacthub.io/changes: |
+    - kind: changed
+      description: Improved chart documentation and package metadata.
+      links:
+        - name: Repository
+          url: https://github.com/Nabsku/wanderer-helm
+  artifacthub.io/images: |
+    - name: Wanderer web
+      image: flomp/wanderer-web:v0.20.0
+    - name: Wanderer database
+      image: flomp/wanderer-db:v0.20.0
+    - name: Meilisearch
+      image: getmeili/meilisearch:v1.36.0
+    - name: Garmin synchronizer
+      image: ghcr.io/nabsku/wanderer-garmin-sync:0.2.0
