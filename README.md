@@ -2,13 +2,15 @@
 
 A production-oriented Helm chart for [Wanderer](https://github.com/open-wanderer/wanderer), the self-hosted trail catalogue.
 
-This chart deploys the three components used by Wanderer `v0.20.0`:
+This chart deploys the three components used by Wanderer `v0.20.0`.
 
 - `flomp/wanderer-web:v0.20.0`
 - `flomp/wanderer-db:v0.20.0` (PocketBase)
 - `getmeili/meilisearch:v1.36.0`
 
-The chart is versioned independently. The initial chart release is `0.1.0`; the optional Garmin synchronizer is part of the next `0.2.0` release.
+The chart is versioned independently from the upstream Wanderer application.
+Release Please updates the chart release, while a separate upstream update PR
+updates the Wanderer application version and image tags.
 
 ## Important production contracts
 
@@ -36,9 +38,10 @@ The upstream images do not declare a non-root `USER`. The chart therefore does n
 The package is published as an OCI Helm chart:
 
 ```bash
+WANDERER_CHART_VERSION=0.1.0 # x-release-please-version
 helm install wanderer \
   oci://ghcr.io/nabsku/charts/wanderer \
-  --version 0.1.0 \
+  --version "$WANDERER_CHART_VERSION" \
   --namespace wanderer \
   --create-namespace \
   --values examples/values-production.yaml
@@ -46,7 +49,8 @@ helm install wanderer \
 
 The production example is a starting point only. Replace the example hosts, storage class, TLS Secret names, resource budgets, and external Secret reference before use.
 
-The `0.2.0` synchronizer changes are currently on the feature branch. Do not use `--version 0.2.0` until that chart and its companion image have been published.
+Use the latest published chart version. The release workflow updates this
+README pin when a new chart release is prepared.
 
 For a local smoke installation:
 
@@ -157,7 +161,10 @@ The synchronizer PVC contains raw Garmin exports, route files, and the Garmin to
 
 The CronJob is resilient to transient Wanderer failures. Each route gets up to four upload attempts by default, with exponential delays of 5, 10, and 20 seconds capped at 60 seconds. Network timeouts and HTTP 408, 425, 429, and 5xx responses are retried; permanent 4xx responses fail immediately. The manifest is saved after every successful route, so a Kubernetes Job retry resumes the unfinished set instead of re-uploading completed routes. Tune `garminSync.uploadRetries`, `garminSync.retryBackoffSeconds`, `garminSync.retryMaxBackoffSeconds`, and `garminSync.requestTimeoutSeconds` for the deployment.
 
-The default Job deadline is six hours. This is based on a measured local run that projected roughly four hours for 829 activities and leaves room for bounded retries. If the deadline is exceeded, Kubernetes fails the Job and applies `backoffLimit`; completed routes remain recorded in the manifest.
+The default Job deadline is six hours. Large accounts can require several
+hours, and the budget leaves room for bounded retries. If the deadline is
+exceeded, Kubernetes fails the Job and applies `backoffLimit`; completed
+routes remain recorded in the manifest.
 
 If `networkPolicy.enabled` is true and Garmin Connect sync is enabled, add a narrow `networkPolicy.garminSyncEgress` rule for HTTPS access. Kubernetes NetworkPolicy cannot express a DNS hostname by itself; use the narrowest IP or CNI-specific FQDN policy available in your cluster.
 
@@ -178,6 +185,38 @@ Before changing `web.image.tag`, `database.image.tag`, or the database image dig
 5. Exercise login, trail upload, map display, search, and plugin loading.
 
 PocketBase and Meilisearch remain singleton workloads. Do not add HPA or replicas to them. Web replicas greater than one require shared RWX upload storage and a tested watcher strategy; the default `Recreate` strategy deliberately avoids RWO attach races.
+
+## Update automation
+
+The repository receives updates through separate, reviewable pull requests:
+
+- **Release Please** prepares chart releases. It updates
+  `charts/wanderer/Chart.yaml:version`, the root `CHANGELOG.md`, the README's
+  published chart pin, and the Garmin synchronizer image tag. The chart
+  `appVersion` remains the upstream Wanderer version.
+- **Upstream Wanderer** runs weekly and on demand. It checks the latest
+  published release at `open-wanderer/wanderer` and opens or updates a PR for
+  the upstream `appVersion`, web/database image tags, icon URL, and current
+  README links. It never changes the chart release version.
+- **Renovate** proposes updates for the synchronizer's Python dependencies,
+  Dockerfile base image, GitHub Actions, and other image tags in Helm values.
+  Wanderer web/database tags are excluded from Renovate so they stay in one
+  tested upstream PR.
+
+All update PRs require the normal chart and integration checks. No update is
+auto-merged. Install the Renovate GitHub App for this repository to activate
+`renovate.json`.
+
+Release Please and the upstream watcher use a GitHub App installation token,
+minted at run time by `actions/create-github-app-token`. Configure a repository
+variable named `RELEASE_AUTOMATION_APP_CLIENT_ID` and a secret named
+`RELEASE_AUTOMATION_APP_PRIVATE_KEY`. Install the App only on this repository
+and grant it Contents, Pull requests, Issues, and Actions write permission.
+The token expires after one hour and is revoked by the action after the job.
+
+This avoids a long-lived PAT. It also lets the bot-created pull request start
+the normal pull-request workflows; events created with the built-in
+`GITHUB_TOKEN` do not start a new workflow run.
 
 ## Verification
 

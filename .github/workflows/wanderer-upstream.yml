@@ -1,0 +1,106 @@
+name: Update upstream Wanderer
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      upstream_version:
+        description: Optional upstream tag override for a controlled test, for example v0.21.0
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-upstream-wanderer
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v4.2.3
+
+      - name: Install render-test dependency
+        run: python -m pip install --disable-pip-version-check --no-input PyYAML==6.0.2
+
+      - name: Resolve latest Wanderer release
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.upstream_version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_VERSION" ]; then
+            tag="$INPUT_VERSION"
+          else
+            tag="$(gh api repos/open-wanderer/wanderer/releases/latest --jq .tag_name)"
+          fi
+          python - "$tag" <<'PY'
+          import re
+          import sys
+
+          tag = sys.argv[1]
+          if not re.fullmatch(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", tag):
+              raise SystemExit(f"unsupported Wanderer release tag: {tag!r}")
+          PY
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update repository-owned Wanderer references
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: python scripts/update_wanderer_upstream.py --version "$VERSION"
+
+      - name: Verify the update
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_update_wanderer_upstream.py' -v
+          tests/render.sh
+          git diff --check
+
+      - name: Mint short-lived update automation token
+        id: automation-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open or update upstream PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ steps.automation-token.outputs.token }}
+          branch: automation/wanderer-upstream
+          delete-branch: true
+          commit-message: "fix(deps): update Wanderer to ${{ steps.version.outputs.tag }}"
+          title: Update Wanderer to ${{ steps.version.outputs.tag }}
+          body: |
+            This automated PR updates the repository-owned Wanderer application references to `${{ steps.version.outputs.tag }}`.
+
+            It updates the Helm `appVersion`, Wanderer web and database image tags, the chart icon reference, and current README links. The chart release version and Garmin synchronizer release remain independent and are handled by Release Please.
+
+            Validation run:
+            - `tests/render.sh`
+            - `python -m unittest discover -s tests -p 'test_update_wanderer_upstream.py' -v`
+            - `git diff --check`
+          labels: |
+            dependencies
+            upstream

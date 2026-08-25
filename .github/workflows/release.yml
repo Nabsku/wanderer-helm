@@ -1,13 +1,10 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing release tag to publish or repair
+        description: Release Please tag to publish or repair
         required: true
         type: string
 
@@ -23,8 +20,11 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out release tag
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
@@ -50,10 +50,13 @@ jobs:
           PYTHONPATH: sync
         run: python -m unittest discover -s tests/sync -v
 
-      - name: Check tag and chart version
+      - name: Run automation unit tests
+        run: python -m unittest discover -s tests -p 'test_update_wanderer_upstream.py' -v
+
+      - name: Check tag, chart version, and image version
         id: version
         env:
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           case "$RELEASE_TAG" in
@@ -62,8 +65,27 @@ jobs:
           esac
           version="${RELEASE_TAG#v}"
           chart_version="$(python -c 'import yaml; print(yaml.safe_load(open("charts/wanderer/Chart.yaml"))["version"])')"
+          sync_image_version="$(python -c 'import yaml; print(yaml.safe_load(open("charts/wanderer/values.yaml"))["garminSync"]["image"]["tag"])')"
           test "$version" = "$chart_version"
+          test "$version" = "$sync_image_version"
+          tag_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+          test "$tag_commit" = "$(git rev-parse HEAD)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Release Please release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if gh release view "$TAG" --json tagName,isDraft >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Release Please release was not found for $TAG" >&2
+          exit 1
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -101,7 +123,9 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Package chart
-        run: helm package "$CHART_DIR" --destination dist
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: helm package "$CHART_DIR" --destination dist --version "$VERSION"
 
       - name: Log in to GHCR
         env:
@@ -128,9 +152,20 @@ jobs:
           cosign sign --yes "ghcr.io/${OWNER,,}/charts/wanderer:${VERSION}"
           cosign sign --yes "ghcr.io/${OWNER,,}/wanderer-garmin-sync@${IMAGE_DIGEST}"
 
-      - name: Create GitHub release
+      - name: Attach chart to Release Please release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+          TAG: ${{ inputs.release_tag }}
           VERSION: ${{ steps.version.outputs.version }}
-        run: gh release create "$TAG" "dist/wanderer-${VERSION}.tgz" --verify-tag --generate-notes
+        run: gh release upload "$TAG" "dist/wanderer-${VERSION}.tgz" --clobber
+
+      - name: Publish draft Release Please release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+          if [ "$is_draft" = true ]; then
+            gh release edit "$TAG" --draft=false
+          fi

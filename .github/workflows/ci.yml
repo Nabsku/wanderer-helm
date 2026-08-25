@@ -37,6 +37,15 @@ jobs:
           PYTHONPATH: sync
         run: python -m unittest discover -s tests/sync -v
 
+      - name: Run automation unit tests
+        run: python -m unittest discover -s tests -p 'test_update_wanderer_upstream.py' -v
+
+      - name: Validate automation configuration
+        run: |
+          python -m json.tool renovate.json >/dev/null
+          python -m json.tool release-please-config.json >/dev/null
+          python -m json.tool .release-please-manifest.json >/dev/null
+
       - name: Build synchronizer image
         run: docker build --tag wanderer-garmin-sync:test sync
 

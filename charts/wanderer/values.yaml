@@ -275,13 +275,13 @@ garminSync:
   # resumes only the unfinished work. Four retries allow recovery from short
   # Garmin/Wanderer outages without creating overlapping Jobs.
   backoffLimit: 4
-  # Measured local runs projected about four hours for 829 activities. This
-  # six-hour budget leaves room for bounded route retries.
+  # A large account run can take several hours. This six-hour budget leaves
+  # room for bounded route retries.
   activeDeadlineSeconds: 21600
   ttlSecondsAfterFinished: 86400
   image:
     repository: ghcr.io/nabsku/wanderer-garmin-sync
-    tag: "0.2.0"
+    tag: "0.2.0" # x-release-please-version
     digest: ""
     pullPolicy: IfNotPresent
   sources:
