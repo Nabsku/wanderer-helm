@@ -95,7 +95,6 @@ web:
   topologySpreadConstraints: []
 
 database:
-  # PocketBase uses SQLite and must remain a singleton.
   replicaCount: 1
   image:
     repository: flomp/wanderer-db
@@ -194,7 +193,6 @@ database:
   topologySpreadConstraints: []
 
 search:
-  # Meilisearch is a rebuildable index and must remain a singleton here.
   replicaCount: 1
   image:
     repository: getmeili/meilisearch
@@ -291,14 +289,13 @@ garminSync:
         existingSecret: ""
         emailKey: garmin-email
         passwordKey: garmin-password
-      # original preserves the Garmin FIT file. gpx uses Garmin's GPX export.
+      # Keep the original FIT file, or use Garmin's GPX export.
       downloadFormat: original
       pageSize: 1000
       maxPages: 2000
     officialExport:
       enabled: false
-  # preserve uploads FIT files. Set to gpx only when a downstream consumer
-  # requires GPX; the original FIT remains in the archive PVC.
+  # Keep the original FIT file when uploading. Use gpx only if required.
   fitMode: preserve
   wanderer:
     url: ""

@@ -19,7 +19,7 @@
 4. The default upload limit is {{ .Values.web.config.bodySizeLimit }} bytes (100 MiB).
    Align the ingress/proxy request limit with this value before importing larger files.
 
-5. PocketBase is the source of truth. Meilisearch stores a rebuildable index.
+5. PocketBase stores the data. Meilisearch stores a rebuildable index.
    Back up the database PVC and plugin PVC; test reindex/recovery before relying on
    the deployment.
 {{- end }}
