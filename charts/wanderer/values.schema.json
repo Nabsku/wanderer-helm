@@ -1207,6 +1207,21 @@
           "minimum": 1,
           "maximum": 3600
         },
+        "uploadRetries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "retryBackoffSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300
+        },
+        "retryMaxBackoffSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600
+        },
         "resources": {
           "$ref": "#/definitions/resources"
         },
@@ -1275,6 +1290,9 @@
         "persistence",
         "limits",
         "requestTimeoutSeconds",
+        "uploadRetries",
+        "retryBackoffSeconds",
+        "retryMaxBackoffSeconds",
         "resources",
         "podAnnotations",
         "podLabels",

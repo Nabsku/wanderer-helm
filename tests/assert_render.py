@@ -98,6 +98,12 @@ def main() -> None:
         assert env["WANDERER_API_TOKEN"]["valueFrom"]["secretKeyRef"]["name"] == "wanderer-garmin-sync"
         assert env["GARMIN_EMAIL"]["valueFrom"]["secretKeyRef"]["name"] == "garmin-connect"
         assert env["GARMIN_PASSWORD"]["valueFrom"]["secretKeyRef"]["name"] == "garmin-connect"
+        assert env["MAX_FILE_BYTES"]["value"] == "268435456"
+        assert env["MAX_ZIP_MEMBERS"]["value"] == "10000"
+        assert env["MAX_ZIP_UNCOMPRESSED_BYTES"]["value"] == "2147483648"
+        assert env["UPLOAD_RETRIES"]["value"] == "3"
+        assert env["RETRY_BACKOFF_SECONDS"]["value"] == "5"
+        assert env["RETRY_MAX_BACKOFF_SECONDS"]["value"] == "60"
         assert container["securityContext"]["readOnlyRootFilesystem"] is True
         assert pod["automountServiceAccountToken"] is False
         assert not ingresses

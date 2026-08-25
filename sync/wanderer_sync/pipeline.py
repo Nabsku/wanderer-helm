@@ -10,6 +10,7 @@ import os
 import re
 import stat
 import tempfile
+import time
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -29,31 +30,115 @@ class SyncError(RuntimeError):
     """Raised when a source or upload cannot be completed safely."""
 
 
+class WandererUploadError(SyncError):
+    """A safe, classified error from the Wanderer upload endpoint."""
+
+    def __init__(
+        self,
+        kind: str,
+        *,
+        retryable: bool,
+        attempts: int,
+        status_code: int | None = None,
+    ) -> None:
+        self.kind = kind
+        self.retryable = retryable
+        self.attempts = attempts
+        self.status_code = status_code
+        detail = f"Wanderer upload failed: {kind}"
+        if status_code is not None:
+            detail += f" HTTP {status_code}"
+        detail += f" after {attempts} attempt(s)"
+        super().__init__(detail)
+
+
 class WandererUploader:
     """Upload one route file through Wanderer's token-authenticated API."""
 
-    def __init__(self, base_url: str, token: str, timeout: int) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        token: str,
+        timeout: int,
+        *,
+        upload_retries: int = 3,
+        retry_backoff_seconds: int = 5,
+        retry_max_backoff_seconds: int = 60,
+    ) -> None:
         self.endpoint = f"{base_url}/api/v1/trail/upload"
         self.token = token
         self.timeout = (10, timeout)
+        self.upload_retries = upload_retries
+        self.retry_backoff_seconds = retry_backoff_seconds
+        self.retry_max_backoff_seconds = retry_max_backoff_seconds
         self.session = requests.Session()
 
     def upload(self, path: Path) -> None:
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        try:
-            with path.open("rb") as file_handle:
-                response = self.session.put(
-                    self.endpoint,
-                    headers={"Authorization": f"Bearer {self.token}"},
-                    data={"ignoreDuplicates": "true", "name": path.name},
-                    files={"file": (path.name, file_handle, content_type)},
-                    timeout=self.timeout,
+        retryable_statuses = {408, 425, 429, 500, 502, 503, 504}
+        for attempt in range(self.upload_retries + 1):
+            try:
+                with path.open("rb") as file_handle:
+                    response = self.session.put(
+                        self.endpoint,
+                        headers={"Authorization": f"Bearer {self.token}"},
+                        data={"ignoreDuplicates": "true", "name": path.name},
+                        files={"file": (path.name, file_handle, content_type)},
+                        timeout=self.timeout,
+                    )
+            except requests.RequestException as exc:
+                retryable = isinstance(exc, (requests.Timeout, requests.ConnectionError))
+                if retryable and attempt < self.upload_retries:
+                    self._wait_before_retry(attempt, kind=exc.__class__.__name__)
+                    continue
+                raise WandererUploadError(
+                    exc.__class__.__name__,
+                    retryable=retryable,
+                    attempts=attempt + 1,
+                ) from exc
+
+            if 200 <= response.status_code < 300:
+                return
+
+            retryable = response.status_code in retryable_statuses
+            if retryable and attempt < self.upload_retries:
+                self._wait_before_retry(
+                    attempt,
+                    kind="http_status",
+                    status_code=response.status_code,
+                    retry_after=response.headers.get("Retry-After"),
                 )
-        except requests.RequestException as exc:
-            raise SyncError(f"Wanderer upload failed with a network error: {exc.__class__.__name__}") from exc
-        if not 200 <= response.status_code < 300:
+                continue
             # Do not log response text: it can contain route names or server data.
-            raise SyncError(f"Wanderer rejected {path.name} with HTTP {response.status_code}")
+            raise WandererUploadError(
+                "http_status",
+                retryable=retryable,
+                attempts=attempt + 1,
+                status_code=response.status_code,
+            )
+
+    def _wait_before_retry(
+        self,
+        attempt: int,
+        *,
+        kind: str,
+        status_code: int | None = None,
+        retry_after: str | None = None,
+    ) -> None:
+        delay = self.retry_backoff_seconds * (2**attempt)
+        if retry_after and retry_after.isdigit():
+            delay = max(delay, int(retry_after))
+        delay = min(delay, self.retry_max_backoff_seconds)
+        LOGGER.warning(
+            "Wanderer upload retrying: error=%s status=%s attempt=%d/%d delay=%ds",
+            kind,
+            status_code if status_code is not None else "none",
+            attempt + 1,
+            self.upload_retries + 1,
+            delay,
+        )
+        if delay > 0:
+            time.sleep(delay)
 
 
 def _sha256(path: Path) -> str:
@@ -189,7 +274,14 @@ class Pipeline:
         self.config.prepare_directories()
         self.manifest = Manifest(config.manifest_path)
         self.lock_path = config.manifest_path.with_name("sync.lock")
-        self.uploader = WandererUploader(config.wanderer_url, config.wanderer_token, config.request_timeout_seconds)
+        self.uploader = WandererUploader(
+            config.wanderer_url,
+            config.wanderer_token,
+            config.request_timeout_seconds,
+            upload_retries=config.upload_retries,
+            retry_backoff_seconds=config.retry_backoff_seconds,
+            retry_max_backoff_seconds=config.retry_max_backoff_seconds,
+        )
         self.work_dir = config.data_dir / "work"
         self.work_dir.mkdir(parents=True, exist_ok=True)
         try:
@@ -298,9 +390,8 @@ class Pipeline:
                 try:
                     self._process_garmin_activity(client, activity)
                 except Exception as exc:
-                    activity_id = activity.get("activityId") or activity.get("activity_id") or "unknown"
-                    LOGGER.error("Garmin activity %s failed: %s", activity_id, exc.__class__.__name__)
-                    self.failures.append(f"garmin:{activity_id}")
+                    LOGGER.error("Garmin activity failed: error=%s", exc.__class__.__name__)
+                    self.failures.append("garmin")
             start += len(activities)
             if len(activities) < self.config.garmin_page_size:
                 return
@@ -357,7 +448,16 @@ class Pipeline:
             self.manifest.save()
             self.uploaded += 1
         except (ConversionError, SyncError, OSError) as exc:
-            LOGGER.error("route processing failed: %s", exc.__class__.__name__)
+            if isinstance(exc, WandererUploadError):
+                LOGGER.error(
+                    "route processing failed: error=%s status=%s attempts=%d retryable=%s",
+                    exc.kind,
+                    exc.status_code if exc.status_code is not None else "none",
+                    exc.attempts,
+                    exc.retryable,
+                )
+            else:
+                LOGGER.error("route processing failed: error=%s", exc.__class__.__name__)
             self.failures.append(str(source))
         finally:
             for temporary in temporary_paths:

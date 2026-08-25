@@ -111,13 +111,19 @@ spec:
                 - name: GARMIN_MAX_PAGES
                   value: {{ .Values.garminSync.sources.garminConnect.maxPages | quote }}
                 - name: MAX_FILE_BYTES
-                  value: {{ .Values.garminSync.limits.maxFileBytes | quote }}
+                  value: {{ printf "%d" (int64 .Values.garminSync.limits.maxFileBytes) | quote }}
                 - name: MAX_ZIP_MEMBERS
-                  value: {{ .Values.garminSync.limits.maxZipMembers | quote }}
+                  value: {{ printf "%d" (int64 .Values.garminSync.limits.maxZipMembers) | quote }}
                 - name: MAX_ZIP_UNCOMPRESSED_BYTES
-                  value: {{ .Values.garminSync.limits.maxZipUncompressedBytes | quote }}
+                  value: {{ printf "%d" (int64 .Values.garminSync.limits.maxZipUncompressedBytes) | quote }}
                 - name: REQUEST_TIMEOUT_SECONDS
                   value: {{ .Values.garminSync.requestTimeoutSeconds | quote }}
+                - name: UPLOAD_RETRIES
+                  value: {{ .Values.garminSync.uploadRetries | quote }}
+                - name: RETRY_BACKOFF_SECONDS
+                  value: {{ .Values.garminSync.retryBackoffSeconds | quote }}
+                - name: RETRY_MAX_BACKOFF_SECONDS
+                  value: {{ .Values.garminSync.retryMaxBackoffSeconds | quote }}
                 {{- if .Values.garminSync.sources.garminConnect.enabled }}
                 - name: GARMIN_EMAIL
                   valueFrom:

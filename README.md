@@ -155,6 +155,10 @@ Use your cluster's approved PVC file-transfer method to place the ZIP in the inb
 
 The synchronizer PVC contains raw Garmin exports, route files, and the Garmin token store. Treat it as sensitive data: use encrypted storage, restrict PVC access, and include it in backup and retention policies.
 
+The CronJob is resilient to transient Wanderer failures. Each route gets up to four upload attempts by default, with exponential delays of 5, 10, and 20 seconds capped at 60 seconds. Network timeouts and HTTP 408, 425, 429, and 5xx responses are retried; permanent 4xx responses fail immediately. The manifest is saved after every successful route, so a Kubernetes Job retry resumes the unfinished set instead of re-uploading completed routes. Tune `garminSync.uploadRetries`, `garminSync.retryBackoffSeconds`, `garminSync.retryMaxBackoffSeconds`, and `garminSync.requestTimeoutSeconds` for the deployment.
+
+The default Job deadline is six hours. This is based on a measured local run that projected roughly four hours for 829 activities and leaves room for bounded retries. If the deadline is exceeded, Kubernetes fails the Job and applies `backoffLimit`; completed routes remain recorded in the manifest.
+
 If `networkPolicy.enabled` is true and Garmin Connect sync is enabled, add a narrow `networkPolicy.garminSyncEgress` rule for HTTPS access. Kubernetes NetworkPolicy cannot express a DNS hostname by itself; use the narrowest IP or CNI-specific FQDN policy available in your cluster.
 
 ## Resource and upload budgets
@@ -188,6 +192,63 @@ helm template wanderer charts/wanderer \
   --values examples/values-production.yaml
 helm package charts/wanderer
 ```
+
+## Kind integration test
+
+The repository includes a real Kubernetes integration test for the optional synchronizer. It builds the synchronizer image, loads it into Kind, installs Wanderer with the Garmin CronJob enabled, seeds a synthetic Garmin account-export ZIP into the synchronizer PVC, and runs the CronJob twice against a small in-cluster Wanderer API test double. The second run must skip the already-uploaded route, which verifies the persistent manifest and duplicate protection.
+
+The test uses synthetic GPX data and a test token. It does not contact Garmin and does not need Garmin credentials.
+
+With `kind`, `kubectl`, Helm, Docker, and Python 3 installed locally:
+
+```bash
+tests/kind/garmin-e2e.sh
+```
+
+Run the same GitHub Actions job with [`act`](https://github.com/nektos/act):
+
+```bash
+act workflow_dispatch \
+  --workflows .github/workflows/kind.yml \
+  --job kind-garmin \
+  --container-architecture linux/amd64 \
+  --platform ubuntu-latest=catthehacker/ubuntu:act-latest
+```
+
+The current `act` runner mounts the Docker socket automatically. If an older `act` build does not, configure its Docker socket mount once in the runner configuration instead of adding a duplicate mount to this command.
+
+### Real Garmin account smoke test
+
+Do not put real Garmin credentials into `act` or GitHub Actions. Use the separate interactive Kind script instead:
+
+```bash
+tests/kind/garmin-real.sh
+```
+
+The script:
+
+1. Prompts for Garmin credentials in the terminal. It never accepts a Wanderer token from another installation.
+2. Creates Kubernetes Secrets without putting values in the command line or repository.
+3. Builds and loads the synchronizer image into Kind.
+4. Installs a fresh local Wanderer database with signup temporarily enabled.
+5. Prompts for a local Wanderer test account and creates it through the local API.
+6. Logs into that local account and creates a raw `wanderer_key_...` API token in the same fresh database.
+7. Disables signup again and installs the Garmin CronJob suspended.
+8. Starts a temporary restricted pod on the synchronizer PVC.
+9. Performs the Garmin login and prompts for MFA when required.
+10. Stores the Garmin token state on the PVC with owner-only permissions.
+11. Runs one real synchronization Job and prints the CronJob state and logs.
+12. Asks whether to enable the six-hour schedule.
+
+The local Wanderer username must contain only letters, numbers, underscores, and dots; the default `garmin_test` is valid. The namespace and PVC are intentionally kept after the run so the archive, manifest, and CronJob can be inspected. Remove the local test account/token and delete the namespace when finished. The Garmin Connect source is unofficial and the current implementation does not provide a date or activity-count filter; a live run walks the configured activity pages.
+
+Use `--enable-schedule` to enable the schedule automatically after a successful one-shot run:
+
+```bash
+tests/kind/garmin-real.sh --enable-schedule
+```
+
+Every invocation appends a timestamp to `KIND_NAMESPACE`, so it creates a new Wanderer database instead of reusing a previous test. The generated API token is stored only in that namespace's Wanderer database and Kubernetes Secret; a PocketBase login JWT or token from another Wanderer deployment will return HTTP 401.
 
 ## Upstream references
 

@@ -271,8 +271,13 @@ garminSync:
   startingDeadlineSeconds: 1800
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
-  backoffLimit: 2
-  activeDeadlineSeconds: 1800
+  # A failed route remains absent from the manifest, so a restarted Job
+  # resumes only the unfinished work. Four retries allow recovery from short
+  # Garmin/Wanderer outages without creating overlapping Jobs.
+  backoffLimit: 4
+  # Measured local runs projected about four hours for 829 activities. This
+  # six-hour budget leaves room for bounded route retries.
+  activeDeadlineSeconds: 21600
   ttlSecondsAfterFinished: 86400
   image:
     repository: ghcr.io/nabsku/wanderer-garmin-sync
@@ -312,7 +317,14 @@ garminSync:
     maxFileBytes: 268435456
     maxZipMembers: 10000
     maxZipUncompressedBytes: 2147483648
-  requestTimeoutSeconds: 60
+  # The upload path may wait for Wanderer's elevation/geocoding dependencies.
+  requestTimeoutSeconds: 180
+  # Per-route retries apply only to network failures and HTTP 408/425/429/5xx.
+  # Permanent 4xx responses fail immediately and are retried by a later Job
+  # only after the operator fixes the underlying configuration.
+  uploadRetries: 3
+  retryBackoffSeconds: 5
+  retryMaxBackoffSeconds: 60
   resources:
     requests:
       cpu: 100m

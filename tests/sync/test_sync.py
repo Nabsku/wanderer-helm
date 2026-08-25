@@ -12,6 +12,7 @@ from unittest import mock
 
 import fitdecode
 import gpxpy
+import requests
 
 from wanderer_sync.config import Config, ConfigError
 from wanderer_sync.converter import fit_to_gpx
@@ -77,6 +78,93 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(put.call_args.args[0], "https://wanderer.example/api/v1/trail/upload")
             self.assertEqual(put.call_args.kwargs["headers"], {"Authorization": "Bearer secret-token"})
             self.assertEqual(put.call_args.kwargs["data"]["ignoreDuplicates"], "true")
+
+    def test_wanderer_uploader_retries_transient_http_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            route = Path(directory) / "route.gpx"
+            route.write_text("<gpx version='1.1'/>", encoding="utf-8")
+            uploader = WandererUploader(
+                "https://wanderer.example",
+                "secret-token",
+                10,
+                upload_retries=2,
+                retry_backoff_seconds=1,
+                retry_max_backoff_seconds=2,
+            )
+            responses = [
+                mock.Mock(status_code=502, headers={}),
+                mock.Mock(status_code=503, headers={}),
+                mock.Mock(status_code=204, headers={}),
+            ]
+            with (
+                mock.patch.object(uploader.session, "put", side_effect=responses) as put,
+                mock.patch("wanderer_sync.pipeline.time.sleep") as sleep,
+            ):
+                uploader.upload(route)
+            self.assertEqual(put.call_count, 3)
+            sleep.assert_has_calls([mock.call(1), mock.call(2)])
+
+    def test_wanderer_uploader_retries_network_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            route = Path(directory) / "route.gpx"
+            route.write_text("<gpx version='1.1'/>", encoding="utf-8")
+            uploader = WandererUploader(
+                "https://wanderer.example",
+                "secret-token",
+                10,
+                upload_retries=1,
+                retry_backoff_seconds=1,
+                retry_max_backoff_seconds=1,
+            )
+            response = mock.Mock(status_code=204, headers={})
+            with (
+                mock.patch.object(
+                    uploader.session,
+                    "put",
+                    side_effect=[requests.ReadTimeout(), response],
+                ) as put,
+                mock.patch("wanderer_sync.pipeline.time.sleep") as sleep,
+            ):
+                uploader.upload(route)
+            self.assertEqual(put.call_count, 2)
+            sleep.assert_called_once_with(1)
+
+    def test_wanderer_uploader_does_not_retry_permanent_http_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            route = Path(directory) / "route.gpx"
+            route.write_text("<gpx version='1.1'/>", encoding="utf-8")
+            uploader = WandererUploader(
+                "https://wanderer.example",
+                "secret-token",
+                10,
+                upload_retries=3,
+                retry_backoff_seconds=1,
+                retry_max_backoff_seconds=1,
+            )
+            response = mock.Mock(status_code=401, headers={})
+            with mock.patch.object(uploader.session, "put", return_value=response) as put:
+                with self.assertRaises(SyncError) as raised:
+                    uploader.upload(route)
+            self.assertEqual(put.call_count, 1)
+            self.assertIn("HTTP 401", str(raised.exception))
+
+    def test_config_reads_retry_controls(self) -> None:
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "SYNC_SOURCES": "official",
+                "WANDERER_URL": "http://wanderer",
+                "WANDERER_API_TOKEN": "token",
+                "UPLOAD_RETRIES": "4",
+                "RETRY_BACKOFF_SECONDS": "3",
+                "RETRY_MAX_BACKOFF_SECONDS": "20",
+            },
+            clear=True,
+        ):
+            config = Config.from_env()
+        self.assertEqual(config.upload_retries, 4)
+        self.assertEqual(config.retry_backoff_seconds, 3)
+        self.assertEqual(config.retry_max_backoff_seconds, 20)
 
     def test_fit_conversion_keeps_route_points(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -74,6 +74,9 @@ class Config:
     max_zip_members: int
     max_zip_uncompressed_bytes: int
     request_timeout_seconds: int
+    upload_retries: int = 3
+    retry_backoff_seconds: int = 5
+    retry_max_backoff_seconds: int = 60
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -102,6 +105,11 @@ class Config:
             raise ConfigError("GARMIN_EMAIL and GARMIN_PASSWORD are required for the Garmin source")
 
         data_dir = Path(os.environ.get("SYNC_DATA_DIR", "/data"))
+        retry_backoff_seconds = _integer("RETRY_BACKOFF_SECONDS", 5, minimum=0, maximum=300)
+        retry_max_backoff_seconds = _integer("RETRY_MAX_BACKOFF_SECONDS", 60, minimum=0, maximum=3600)
+        if retry_max_backoff_seconds < retry_backoff_seconds:
+            raise ConfigError("RETRY_MAX_BACKOFF_SECONDS must be at least RETRY_BACKOFF_SECONDS")
+
         return cls(
             sources=frozenset(sources),
             wanderer_url=_url("WANDERER_URL"),
@@ -123,6 +131,9 @@ class Config:
                 "MAX_ZIP_UNCOMPRESSED_BYTES", 4 * 1024 * 1024 * 1024, minimum=1
             ),
             request_timeout_seconds=_integer("REQUEST_TIMEOUT_SECONDS", 120, minimum=1, maximum=3600),
+            upload_retries=_integer("UPLOAD_RETRIES", 3, minimum=0, maximum=10),
+            retry_backoff_seconds=retry_backoff_seconds,
+            retry_max_backoff_seconds=retry_max_backoff_seconds,
         )
 
     def prepare_directories(self) -> None:
