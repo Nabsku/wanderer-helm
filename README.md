@@ -192,8 +192,8 @@ The repository receives updates through separate, reviewable pull requests:
 
 - **Release Please** prepares chart releases. It updates
   `charts/wanderer/Chart.yaml:version`, the root `CHANGELOG.md`, the README's
-  published chart pin, and the Garmin synchronizer image tag. The chart
-  `appVersion` remains the upstream Wanderer version.
+  published chart pin, the Garmin synchronizer image tag, and its Artifact Hub
+  image metadata. The chart `appVersion` remains the upstream Wanderer version.
 - **Upstream Wanderer** runs weekly and on demand. It checks the latest
   published release at `open-wanderer/wanderer` and opens or updates a PR for
   the upstream `appVersion`, web/database image tags, icon URL, and current
