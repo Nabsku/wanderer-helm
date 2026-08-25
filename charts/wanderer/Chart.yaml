@@ -38,3 +38,5 @@ annotations:
       image: flomp/wanderer-db:v0.20.0
     - name: Meilisearch
       image: getmeili/meilisearch:v1.36.0
+    - name: Garmin synchronizer
+      image: ghcr.io/nabsku/wanderer-garmin-sync:0.2.1 # x-release-please-version
