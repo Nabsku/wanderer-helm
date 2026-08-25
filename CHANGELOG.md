@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/Nabsku/wanderer-helm/compare/v0.2.0...v0.2.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* improve Artifact Hub chart metadata ([821a697](https://github.com/Nabsku/wanderer-helm/commit/821a69767ff64214c834593c9973d7d68abc3d23))
+
 ## [0.2.0](https://github.com/Nabsku/wanderer-helm/compare/v0.1.0...v0.2.0) (2026-08-25)
 
 
