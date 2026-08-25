@@ -1,6 +1,6 @@
 # Wanderer Helm chart
 
-A production-oriented Helm chart for [Wanderer](https://github.com/open-wanderer/wanderer), the self-hosted trail catalogue.
+A Helm chart for [Wanderer](https://github.com/open-wanderer/wanderer), the self-hosted trail catalogue.
 
 This chart deploys the three components used by Wanderer `v0.20.0`.
 
@@ -12,7 +12,7 @@ The chart is versioned independently from the upstream Wanderer application.
 Release Please updates the chart release, while a separate upstream update PR
 updates the Wanderer application version and image tags.
 
-## Important production contracts
+## Settings to check
 
 Set both URLs explicitly:
 
@@ -28,7 +28,7 @@ The chart defaults to:
 - a 100 MiB SvelteKit request-body limit;
 - read-only root filesystems, dropped Linux capabilities, `RuntimeDefault` seccomp, and no ServiceAccount token mount;
 - one web replica with `Recreate`, because the upload watcher uses a local directory and the default volume is RWO;
-- singleton PocketBase and Meilisearch workloads;
+- one PocketBase workload and one Meilisearch workload;
 - generated stable keys when no external Secret is supplied.
 
 The upstream images do not declare a non-root `USER`. The chart therefore does not set `runAsNonRoot` by default. Verify image UID and volume permissions before enabling it.
@@ -86,7 +86,7 @@ If `secret.existingSecret` is empty, the chart creates a Secret and generates hi
 
 | Workload | Mount | Role | Backup authority |
 |---|---|---|---|
-| PocketBase | `/pb_data` | SQLite, users, trails, images, uploaded files | **Primary source of truth** |
+| PocketBase | `/pb_data` | SQLite, users, trails, images, uploaded files | **Primary data store** |
 | PocketBase | `/data/plugins` | Installed plugin bundles | Durable plugin state |
 | Meilisearch | `/meili_data` | Search index | Rebuildable cache |
 | Web | `/app/uploads` | Optional file-watch/drop folder | Only pending watcher input |
@@ -159,7 +159,7 @@ Use your cluster's approved PVC file-transfer method to place the ZIP in the inb
 
 The synchronizer PVC contains raw Garmin exports, route files, and the Garmin token store. Treat it as sensitive data: use encrypted storage, restrict PVC access, and include it in backup and retention policies.
 
-The CronJob is resilient to transient Wanderer failures. Each route gets up to four upload attempts by default, with exponential delays of 5, 10, and 20 seconds capped at 60 seconds. Network timeouts and HTTP 408, 425, 429, and 5xx responses are retried; permanent 4xx responses fail immediately. The manifest is saved after every successful route, so a Kubernetes Job retry resumes the unfinished set instead of re-uploading completed routes. Tune `garminSync.uploadRetries`, `garminSync.retryBackoffSeconds`, `garminSync.retryMaxBackoffSeconds`, and `garminSync.requestTimeoutSeconds` for the deployment.
+The CronJob retries transient Wanderer failures. Each route gets up to four upload attempts by default, with exponential delays of 5, 10, and 20 seconds capped at 60 seconds. Network timeouts and HTTP 408, 425, 429, and 5xx responses are retried; permanent 4xx responses fail immediately. The manifest is saved after every successful route, so a Kubernetes Job retry resumes the unfinished set instead of re-uploading completed routes. Tune `garminSync.uploadRetries`, `garminSync.retryBackoffSeconds`, `garminSync.retryMaxBackoffSeconds`, and `garminSync.requestTimeoutSeconds` for the deployment.
 
 The default Job deadline is six hours. Large accounts can require several
 hours, and the budget leaves room for bounded retries. If the deadline is
@@ -184,7 +184,7 @@ Before changing `web.image.tag`, `database.image.tag`, or the database image dig
 4. Upgrade in a maintenance window and verify all three readiness probes.
 5. Exercise login, trail upload, map display, search, and plugin loading.
 
-PocketBase and Meilisearch remain singleton workloads. Do not add HPA or replicas to them. Web replicas greater than one require shared RWX upload storage and a tested watcher strategy; the default `Recreate` strategy deliberately avoids RWO attach races.
+Run PocketBase and Meilisearch with one replica each. Do not add an HPA or more replicas to them. Web replicas greater than one require shared RWX upload storage and a tested watcher strategy; the default `Recreate` strategy avoids RWO attach races.
 
 ## Update automation
 
