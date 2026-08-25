@@ -208,11 +208,12 @@ auto-merged. Install the Renovate GitHub App for this repository to activate
 `renovate.json`.
 
 Release Please and the upstream watcher use a GitHub App installation token,
-minted at run time by `actions/create-github-app-token`. Configure a repository
-variable named `RELEASE_AUTOMATION_APP_CLIENT_ID` and a secret named
-`RELEASE_AUTOMATION_APP_PRIVATE_KEY`. Install the App only on this repository
-and grant it Contents, Pull requests, Issues, and Actions write permission.
-The token expires after one hour and is revoked by the action after the job.
+minted at run time by `actions/create-github-app-token`. Configure
+`RELEASE_AUTOMATION_APP_CLIENT_ID` as a repository variable or secret, and
+configure `RELEASE_AUTOMATION_APP_PRIVATE_KEY` as a repository secret. Install
+the App only on this repository and grant it Contents, Pull requests, Issues,
+and Actions write permission. The token expires after one hour and is revoked
+by the action after the job.
 
 This avoids a long-lived PAT. It also lets the bot-created pull request start
 the normal pull-request workflows; events created with the built-in
