@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/Nabsku/wanderer-helm/compare/v0.2.2...v0.2.3) (2026-08-26)
+
+
+### Bug Fixes
+
+* include chart README in package ([5522332](https://github.com/Nabsku/wanderer-helm/commit/5522332b621fdd39d110081bd05a061cb0c2c0c7))
+
 ## [0.2.2](https://github.com/Nabsku/wanderer-helm/compare/v0.2.1...v0.2.2) (2026-08-25)
 
 
