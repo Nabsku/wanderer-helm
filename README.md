@@ -38,7 +38,7 @@ The upstream images do not declare a non-root `USER`. The chart therefore does n
 The package is published as an OCI Helm chart:
 
 ```bash
-WANDERER_CHART_VERSION=0.2.2 # x-release-please-version
+WANDERER_CHART_VERSION=0.2.3 # x-release-please-version
 helm install wanderer \
   oci://ghcr.io/nabsku/charts/wanderer \
   --version "$WANDERER_CHART_VERSION" \
