@@ -314,6 +314,8 @@ garminSync:
     maxFileBytes: 268435456
     maxZipMembers: 10000
     maxZipUncompressedBytes: 2147483648
+    # Keep photo imports bounded; set to 0 to disable them.
+    maxPhotosPerActivity: 20
   # The upload path may wait for Wanderer's elevation/geocoding dependencies.
   requestTimeoutSeconds: 180
   # Per-route retries apply only to network failures and HTTP 408/425/429/5xx.

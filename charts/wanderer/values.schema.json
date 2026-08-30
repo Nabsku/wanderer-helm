@@ -1194,12 +1194,18 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 17179869184
+            },
+            "maxPhotosPerActivity": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
             }
           },
           "required": [
             "maxFileBytes",
             "maxZipMembers",
-            "maxZipUncompressedBytes"
+            "maxZipUncompressedBytes",
+            "maxPhotosPerActivity"
           ]
         },
         "requestTimeoutSeconds": {
