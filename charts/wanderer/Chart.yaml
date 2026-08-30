@@ -2,7 +2,7 @@ apiVersion: v2
 name: wanderer
 description: Helm chart for the self-hosted Wanderer trail catalogue.
 type: application
-version: 0.3.0
+version: 0.4.0
 appVersion: "0.20.0"
 kubeVersion: ">=1.25.0-0"
 icon: https://raw.githubusercontent.com/open-wanderer/wanderer/v0.20.0/web/static/svgs/logo_text_two_line_dark.svg
@@ -39,4 +39,4 @@ annotations:
     - name: Meilisearch
       image: getmeili/meilisearch:v1.36.0
     - name: Garmin synchronizer
-      image: ghcr.io/nabsku/wanderer-garmin-sync:0.3.0 # x-release-please-version
+      image: ghcr.io/nabsku/wanderer-garmin-sync:0.4.0 # x-release-please-version
