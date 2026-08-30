@@ -90,6 +90,8 @@ class GarminRecordingUploader:
         *,
         name: str,
         category_id: str | None = None,
+        completed: bool | None = None,
+        description: str | None = None,
         photos: tuple[Path, ...] = (),
     ) -> dict[str, str]:
         self.updates.append(
@@ -97,6 +99,8 @@ class GarminRecordingUploader:
                 "trail_id": trail_id,
                 "name": name,
                 "category_id": category_id,
+                "completed": completed,
+                "description": description,
                 "photos": photos,
             }
         )
@@ -243,6 +247,8 @@ class SyncTests(unittest.TestCase):
                     "trail00000042",
                     name="Morning Run",
                     category_id="category-running",
+                    completed=True,
+                    description="A morning run",
                     photos=(photo,),
                 )
             self.assertEqual(trail, {"id": "trail00000042"})
@@ -254,11 +260,29 @@ class SyncTests(unittest.TestCase):
                 "id": "trail00000042",
                 "name": "Morning Run",
                 "category": "category-running",
+                "completed": "true",
+                "description": "A morning run",
             })
             files = post.call_args.kwargs["files"]
             self.assertEqual(files[0][0], "photos")
             self.assertEqual(files[0][1][0], "photo.jpg")
             self.assertTrue(files[0][1][1].closed)
+
+    def test_wanderer_uploader_updates_completed_trail_without_photos(self) -> None:
+        uploader = WandererUploader("https://wanderer.example", "secret-token", 10)
+        response = mock.Mock(status_code=200, headers={})
+        response.json.return_value = {"id": "trail00000042"}
+        with mock.patch.object(uploader.session, "post", return_value=response) as post:
+            uploader.update(
+                "trail00000042",
+                name="Morning Run",
+                completed=True,
+                description="A morning run",
+            )
+        self.assertEqual(
+            post.call_args.kwargs["json"],
+            {"name": "Morning Run", "completed": True, "description": "A morning run"},
+        )
 
     def test_wanderer_uploader_lists_trails_and_categories(self) -> None:
         with tempfile.TemporaryDirectory():
@@ -323,6 +347,7 @@ class SyncTests(unittest.TestCase):
                 {
                     "activityId": "42",
                     "activityName": "Morning Run",
+                    "description": "A morning run",
                     "activityType": {"typeKey": "trail_run"},
                     "hasImages": False,
                 },
@@ -331,10 +356,14 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(len(uploader.updates), 1)
             self.assertEqual(uploader.updates[0]["name"], "Morning Run")
             self.assertEqual(uploader.updates[0]["category_id"], "category-running")
+            self.assertTrue(uploader.updates[0]["completed"])
+            self.assertEqual(uploader.updates[0]["description"], "A morning run")
             item = pipeline.manifest.processed["garmin:42"]
             self.assertEqual(item["activity_name"], "Morning Run")
             self.assertEqual(item["activity_type"], "trail_run")
             self.assertEqual(item["category"], "Running")
+            self.assertTrue(item["completed"])
+            self.assertEqual(item["description"], "A morning run")
             self.assertEqual(item["trail_id"], "trail00000042")
 
     def test_existing_garmin_activity_is_backfilled_without_redownload(self) -> None:
@@ -374,6 +403,7 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(uploader.updates[0]["trail_id"], "existing-trail")
             self.assertEqual(uploader.updates[0]["name"], "Old Morning Run")
             self.assertEqual(uploader.updates[0]["category_id"], "category-hiking")
+            self.assertTrue(uploader.updates[0]["completed"])
             self.assertEqual(
                 len(uploader.updates[0]["photos"]),
                 1,
