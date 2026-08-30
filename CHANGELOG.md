@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/Nabsku/wanderer-helm/compare/v0.2.3...v0.3.0) (2026-08-30)
+
+
+### Features
+
+* **sync:** import Garmin activity metadata ([0cf9648](https://github.com/Nabsku/wanderer-helm/commit/0cf9648c01108093d4c1e55257f1167b331c4c54))
+
 ## [0.2.3](https://github.com/Nabsku/wanderer-helm/compare/v0.2.2...v0.2.3) (2026-08-26)
 
 
