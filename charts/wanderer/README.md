@@ -68,7 +68,7 @@ The synchronizer PVC contains raw Garmin exports, route files, the idempotency m
 
 The synchronizer preserves original FIT files. Set `garminSync.fitMode: gpx` only when a GPX-only consumer needs conversion; the original FIT file remains in the archive.
 
-Garmin imports keep Garmin activity names and map activity types to Wanderer's Hiking, Walking, Running (including trail running), Biking, Climbing, Skiing, Canoeing, or Other categories. Existing Garmin imports are reconciled by their legacy activity filename on the first upgraded sync. Garmin activity photos are imported when available; the best-effort per-activity limit is controlled by `garminSync.limits.maxPhotosPerActivity` and defaults to 20.
+Garmin imports keep Garmin activity names, mark trails completed, copy non-empty activity descriptions, and map activity types to Wanderer's Hiking, Walking, Running (including trail running), Biking, Climbing, Skiing, Canoeing, or Other categories. Existing Garmin imports are reconciled by their legacy activity filename on the first upgraded sync. Garmin activity photos are imported when available; the best-effort per-activity limit is controlled by `garminSync.limits.maxPhotosPerActivity` and defaults to 20.
 
 See [`examples/values-garmin-sync.yaml`](https://github.com/Nabsku/wanderer-helm/blob/main/examples/values-garmin-sync.yaml) before enabling the CronJob.
 
