@@ -2,8 +2,8 @@
 """Update all repository-owned references to an upstream Wanderer release.
 
 This script intentionally updates only the upstream application version. The
-Helm chart version and the synchronizer image release are owned by Release
-Please and are not changed here.
+Helm chart version and the synchronizer image release are owned by Knope and
+are not changed here.
 """
 
 from __future__ import annotations

@@ -1,0 +1,63 @@
+name: Prepare release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: knope-prepare-release
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    if: "github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, 'chore: prepare release')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint short-lived release automation token
+        id: automation-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_APP_CLIENT_ID || secrets.RELEASE_AUTOMATION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.automation-token.outputs.token }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Knope
+        uses: knope-dev/action@v2.1.2
+        with:
+          version: 0.23.0
+
+      - name: Prepare release preview
+        env:
+          GITHUB_TOKEN: ${{ steps.automation-token.outputs.token }}
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/knope-prepare-release.log"
+          set +e
+          knope prepare-release --verbose 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+          if grep -Fq "No packages are ready to release" "$log"; then
+            echo "No release-affecting commits found."
+            exit 0
+          fi
+          exit "$status"
