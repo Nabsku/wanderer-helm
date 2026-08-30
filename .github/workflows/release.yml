@@ -1,10 +1,14 @@
 name: Release
 
 on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: Release Please tag to publish or repair
+      release_sha:
+        description: Merged Knope release-preview commit SHA to publish or repair
         required: true
         type: string
 
@@ -18,13 +22,23 @@ env:
 
 jobs:
   release:
+    if: (github.event_name == 'pull_request' && github.head_ref == 'knope/release' && github.event.pull_request.merged == true) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Check out release tag
+      - name: Mint short-lived release automation token
+        id: automation-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_APP_CLIENT_ID || secrets.RELEASE_AUTOMATION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Check out release commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.merge_commit_sha || inputs.release_sha }}
           fetch-depth: 0
+          token: ${{ steps.automation-token.outputs.token }}
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
@@ -53,41 +67,20 @@ jobs:
       - name: Run automation unit tests
         run: python -m unittest discover -s tests -p 'test_update_wanderer_upstream.py' -v
 
-      - name: Check tag, chart version, and image version
+      - name: Check chart and synchronizer versions
         id: version
-        env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          case "$RELEASE_TAG" in
-            v[0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "release tag must match vMAJOR.MINOR.PATCH: $RELEASE_TAG" >&2; exit 1 ;;
-          esac
-          version="${RELEASE_TAG#v}"
-          chart_version="$(python -c 'import yaml; print(yaml.safe_load(open("charts/wanderer/Chart.yaml"))["version"])')"
+          version="$(python -c 'import yaml; print(yaml.safe_load(open("charts/wanderer/Chart.yaml"))["version"])')"
           sync_image_version="$(python -c 'import yaml; print(yaml.safe_load(open("charts/wanderer/values.yaml"))["garminSync"]["image"]["tag"])')"
           artifacthub_sync_image_version="$(python -c 'import yaml; chart=yaml.safe_load(open("charts/wanderer/Chart.yaml")); images=yaml.safe_load(chart["annotations"]["artifacthub.io/images"]); print(next(item["image"].rsplit(":", 1)[1] for item in images if item["name"] == "Garmin synchronizer"))')"
-          test "$version" = "$chart_version"
+          case "$version" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "chart version must match MAJOR.MINOR.PATCH: $version" >&2; exit 1 ;;
+          esac
           test "$version" = "$sync_image_version"
           test "$version" = "$artifacthub_sync_image_version"
-          tag_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
-          test "$tag_commit" = "$(git rev-parse HEAD)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Verify Release Please release exists
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.release_tag }}
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            if gh release view "$TAG" --json tagName,isDraft >/dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "Release Please release was not found for $TAG" >&2
-          exit 1
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -154,20 +147,12 @@ jobs:
           cosign sign --yes "ghcr.io/${OWNER,,}/charts/wanderer:${VERSION}"
           cosign sign --yes "ghcr.io/${OWNER,,}/wanderer-garmin-sync@${IMAGE_DIGEST}"
 
-      - name: Attach chart to Release Please release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.release_tag }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: gh release upload "$TAG" "dist/wanderer-${VERSION}.tgz" --clobber
+      - name: Create GitHub release and tag
+        uses: knope-dev/action@v2.1.2
+        with:
+          version: 0.23.0
 
-      - name: Publish draft Release Please release
+      - name: Release prepared version
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.release_tag }}
-        run: |
-          set -euo pipefail
-          is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
-          if [ "$is_draft" = true ]; then
-            gh release edit "$TAG" --draft=false
-          fi
+          GITHUB_TOKEN: ${{ steps.automation-token.outputs.token }}
+        run: knope release --verbose

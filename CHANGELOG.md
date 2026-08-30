@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.0](https://github.com/Nabsku/wanderer-helm/compare/v0.3.0...v0.4.0) (2026-08-30)
+## 0.4.0 (2026-08-30)
 
 
 ### Features

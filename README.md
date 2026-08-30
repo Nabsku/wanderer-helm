@@ -9,8 +9,9 @@ This chart deploys the three components used by Wanderer `v0.20.0`.
 - `getmeili/meilisearch:v1.36.0`
 
 The chart is versioned independently from the upstream Wanderer application.
-Release Please updates the chart release, while a separate upstream update PR
-updates the Wanderer application version and image tags.
+Knope updates the shared chart and Garmin synchronizer release, while a
+separate upstream update PR updates the Wanderer application version and image
+tags.
 
 ## Settings to check
 
@@ -38,7 +39,7 @@ The upstream images do not declare a non-root `USER`. The chart therefore does n
 The package is published as an OCI Helm chart:
 
 ```bash
-WANDERER_CHART_VERSION=0.4.0 # x-release-please-version
+WANDERER_CHART_VERSION=0.4.0
 helm install wanderer \
   oci://ghcr.io/nabsku/charts/wanderer \
   --version "$WANDERER_CHART_VERSION" \
@@ -194,10 +195,12 @@ Run PocketBase and Meilisearch with one replica each. Do not add an HPA or more 
 
 The repository receives updates through separate, reviewable pull requests:
 
-- **Release Please** prepares chart releases. It updates
+- **Knope** prepares shared chart releases. It updates
   `charts/wanderer/Chart.yaml:version`, the root `CHANGELOG.md`, the README's
   published chart pin, the Garmin synchronizer image tag, and its Artifact Hub
-  image metadata. The chart `appVersion` remains the upstream Wanderer version.
+  image metadata. Merging the release preview PR builds and signs the
+  synchronizer image and OCI chart before Knope creates the tag and GitHub
+  release. The chart `appVersion` remains the upstream Wanderer version.
 - **Upstream Wanderer** runs weekly and on demand. It checks the latest
   published release at `open-wanderer/wanderer` and opens or updates a PR for
   the upstream `appVersion`, web/database image tags, icon URL, and current
@@ -211,8 +214,8 @@ All update PRs require the normal chart and integration checks. No update is
 auto-merged. Install the Renovate GitHub App for this repository to activate
 `renovate.json`.
 
-Release Please and the upstream watcher use a GitHub App installation token,
-minted at run time by `actions/create-github-app-token`. Configure
+Knope and the upstream watcher use a GitHub App installation token, minted at
+run time by `actions/create-github-app-token`. Configure
 `RELEASE_AUTOMATION_APP_CLIENT_ID` as a repository variable or secret, and
 configure `RELEASE_AUTOMATION_APP_PRIVATE_KEY` as a repository secret. Install
 the App only on this repository and grant it Contents, Pull requests, Issues,

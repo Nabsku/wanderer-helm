@@ -15,6 +15,13 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Knope
+        uses: knope-dev/action@v2.1.2
+        with:
+          version: 0.23.0
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
@@ -43,8 +50,7 @@ jobs:
       - name: Validate automation configuration
         run: |
           python -m json.tool renovate.json >/dev/null
-          python -m json.tool release-please-config.json >/dev/null
-          python -m json.tool .release-please-manifest.json >/dev/null
+          knope --validate
 
       - name: Build synchronizer image
         run: docker build --tag wanderer-garmin-sync:test sync

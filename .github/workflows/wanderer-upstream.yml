@@ -95,7 +95,7 @@ jobs:
           body: |
             This automated PR updates the repository-owned Wanderer application references to `${{ steps.version.outputs.tag }}`.
 
-            It updates the Helm `appVersion`, Wanderer web and database image tags, the chart icon reference, and current README links. The chart release version and Garmin synchronizer release remain independent and are handled by Release Please.
+            It updates the Helm `appVersion`, Wanderer web and database image tags, the chart icon reference, and current README links. The chart release version and Garmin synchronizer release are shared and handled by Knope.
 
             Validation run:
             - `tests/render.sh`
