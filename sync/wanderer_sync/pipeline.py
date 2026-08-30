@@ -14,6 +14,7 @@ import time
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import parse_qsl, urlparse
 
 import requests
 from garminconnect import Garmin
@@ -31,7 +32,7 @@ class SyncError(RuntimeError):
 
 
 class WandererUploadError(SyncError):
-    """A safe, classified error from the Wanderer upload endpoint."""
+    """A safe, classified error from a Wanderer API request."""
 
     def __init__(
         self,
@@ -40,12 +41,14 @@ class WandererUploadError(SyncError):
         retryable: bool,
         attempts: int,
         status_code: int | None = None,
+        operation: str = "upload",
     ) -> None:
         self.kind = kind
         self.retryable = retryable
         self.attempts = attempts
         self.status_code = status_code
-        detail = f"Wanderer upload failed: {kind}"
+        self.operation = operation
+        detail = f"Wanderer {operation} failed: {kind}"
         if status_code is not None:
             detail += f" HTTP {status_code}"
         detail += f" after {attempts} attempt(s)"
@@ -53,7 +56,9 @@ class WandererUploadError(SyncError):
 
 
 class WandererUploader:
-    """Upload one route file through Wanderer's token-authenticated API."""
+    """Use Wanderer's API to upload and reconcile route metadata."""
+
+    RETRYABLE_STATUSES = {408, 425, 429, 500, 502, 503, 504}
 
     def __init__(
         self,
@@ -65,48 +70,179 @@ class WandererUploader:
         retry_backoff_seconds: int = 5,
         retry_max_backoff_seconds: int = 60,
     ) -> None:
-        self.endpoint = f"{base_url}/api/v1/trail/upload"
+        self.base_url = base_url.rstrip("/")
+        self.endpoint = f"{self.base_url}/api/v1/trail/upload"
+        self.trails_endpoint = f"{self.base_url}/api/v1/trail"
+        self.categories_endpoint = f"{self.base_url}/api/v1/category"
         self.token = token
         self.timeout = (10, timeout)
         self.upload_retries = upload_retries
         self.retry_backoff_seconds = retry_backoff_seconds
         self.retry_max_backoff_seconds = retry_max_backoff_seconds
         self.session = requests.Session()
+        self._categories: list[dict[str, Any]] | None = None
 
-    def upload(self, path: Path) -> None:
+    def upload(self, path: Path, *, name: str | None = None) -> dict[str, Any] | None:
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        retryable_statuses = {408, 425, 429, 500, 502, 503, 504}
+        upload_name = name or path.name
+
+        def open_file() -> tuple[dict[str, tuple[str, Any, str]], list[Any]]:
+            file_handle = path.open("rb")
+            return {"file": (path.name, file_handle, content_type)}, [file_handle]
+
+        response = self._request(
+            "put",
+            self.endpoint,
+            data={"ignoreDuplicates": "true", "name": upload_name},
+            files_factory=open_file,
+            operation="upload",
+        )
+        return _json_object(response)
+
+    def list_trails(self) -> list[dict[str, Any]]:
+        response = self._request(
+            "get",
+            self.trails_endpoint,
+            params={"perPage": -1},
+            operation="trail lookup",
+        )
+        payload = _json_payload(response)
+        if isinstance(payload, dict) and isinstance(payload.get("items"), list):
+            return [item for item in payload["items"] if isinstance(item, dict)]
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        return []
+
+    def list_categories(self) -> list[dict[str, Any]]:
+        if self._categories is not None:
+            return self._categories
+        response = self._request(
+            "get",
+            self.categories_endpoint,
+            params={"perPage": -1},
+            operation="category lookup",
+        )
+        payload = _json_payload(response)
+        if isinstance(payload, dict) and isinstance(payload.get("items"), list):
+            self._categories = [item for item in payload["items"] if isinstance(item, dict)]
+        elif isinstance(payload, list):
+            self._categories = [item for item in payload if isinstance(item, dict)]
+        else:
+            self._categories = []
+        return self._categories
+
+    def category_id(self, category_name: str) -> str | None:
+        wanted = _normalize_category_name(category_name)
+        for category in self.list_categories():
+            category_id = category.get("id")
+            if not isinstance(category_id, str) or not category_id:
+                continue
+            for field in ("name", "short_name", "shortName"):
+                value = category.get(field)
+                if isinstance(value, str) and _normalize_category_name(value) == wanted:
+                    return category_id
+        return None
+
+    def update(
+        self,
+        trail_id: str,
+        *,
+        name: str,
+        category_id: str | None = None,
+        photos: tuple[Path, ...] = (),
+    ) -> dict[str, Any] | None:
+        if photos:
+            data: dict[str, str] = {"id": trail_id, "name": name}
+            if category_id is not None:
+                data["category"] = category_id
+
+            def open_photos() -> tuple[list[tuple[str, tuple[str, Any, str]]], list[Any]]:
+                handles: list[Any] = []
+                files: list[tuple[str, tuple[str, Any, str]]] = []
+                try:
+                    for photo in photos:
+                        handle = photo.open("rb")
+                        handles.append(handle)
+                        content_type = mimetypes.guess_type(photo.name)[0] or "application/octet-stream"
+                        files.append(("photos", (photo.name, handle, content_type)))
+                except Exception:
+                    for handle in handles:
+                        handle.close()
+                    raise
+                return files, handles
+
+            response = self._request(
+                "post",
+                f"{self.base_url}/api/v1/trail/form/{trail_id}",
+                data=data,
+                files_factory=open_photos,
+                operation="trail update",
+            )
+        else:
+            data = {"name": name}
+            if category_id is not None:
+                data["category"] = category_id
+            response = self._request(
+                "post",
+                f"{self.base_url}/api/v1/trail/{trail_id}",
+                json_payload=data,
+                operation="trail update",
+            )
+        return _json_object(response)
+
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        data: Any = None,
+        json_payload: Any = None,
+        params: Any = None,
+        files_factory: Any = None,
+        operation: str,
+    ) -> requests.Response:
         for attempt in range(self.upload_retries + 1):
+            handles: list[Any] = []
             try:
-                with path.open("rb") as file_handle:
-                    response = self.session.put(
-                        self.endpoint,
-                        headers={"Authorization": f"Bearer {self.token}"},
-                        data={"ignoreDuplicates": "true", "name": path.name},
-                        files={"file": (path.name, file_handle, content_type)},
-                        timeout=self.timeout,
-                    )
+                request_kwargs: dict[str, Any] = {
+                    "headers": {"Authorization": f"Bearer {self.token}"},
+                    "timeout": self.timeout,
+                }
+                if data is not None:
+                    request_kwargs["data"] = data
+                if json_payload is not None:
+                    request_kwargs["json"] = json_payload
+                if params is not None:
+                    request_kwargs["params"] = params
+                if files_factory is not None:
+                    request_kwargs["files"], handles = files_factory()
+                response = getattr(self.session, method)(url, **request_kwargs)
             except requests.RequestException as exc:
                 retryable = isinstance(exc, (requests.Timeout, requests.ConnectionError))
                 if retryable and attempt < self.upload_retries:
-                    self._wait_before_retry(attempt, kind=exc.__class__.__name__)
+                    self._wait_before_retry(attempt, kind=exc.__class__.__name__, operation=operation)
                     continue
                 raise WandererUploadError(
                     exc.__class__.__name__,
                     retryable=retryable,
                     attempts=attempt + 1,
+                    operation=operation,
                 ) from exc
+            finally:
+                for handle in handles:
+                    handle.close()
 
             if 200 <= response.status_code < 300:
-                return
+                return response
 
-            retryable = response.status_code in retryable_statuses
+            retryable = response.status_code in self.RETRYABLE_STATUSES
             if retryable and attempt < self.upload_retries:
                 self._wait_before_retry(
                     attempt,
                     kind="http_status",
                     status_code=response.status_code,
-                    retry_after=response.headers.get("Retry-After"),
+                    retry_after=(getattr(response, "headers", {}) or {}).get("Retry-After"),
+                    operation=operation,
                 )
                 continue
             # Do not log response text: it can contain route names or server data.
@@ -115,7 +251,9 @@ class WandererUploader:
                 retryable=retryable,
                 attempts=attempt + 1,
                 status_code=response.status_code,
+                operation=operation,
             )
+        raise AssertionError("request retry loop did not return or raise")
 
     def _wait_before_retry(
         self,
@@ -124,13 +262,15 @@ class WandererUploader:
         kind: str,
         status_code: int | None = None,
         retry_after: str | None = None,
+        operation: str = "upload",
     ) -> None:
         delay = self.retry_backoff_seconds * (2**attempt)
-        if retry_after and retry_after.isdigit():
+        if isinstance(retry_after, str) and retry_after.isdigit():
             delay = max(delay, int(retry_after))
         delay = min(delay, self.retry_max_backoff_seconds)
         LOGGER.warning(
-            "Wanderer upload retrying: error=%s status=%s attempt=%d/%d delay=%ds",
+            "Wanderer %s retrying: error=%s status=%s attempt=%d/%d delay=%ds",
+            operation,
             kind,
             status_code if status_code is not None else "none",
             attempt + 1,
@@ -139,6 +279,19 @@ class WandererUploader:
         )
         if delay > 0:
             time.sleep(delay)
+
+
+def _json_payload(response: requests.Response) -> dict[str, Any] | list[Any] | None:
+    try:
+        payload = response.json()
+    except (ValueError, requests.RequestException):
+        return None
+    return payload if isinstance(payload, (dict, list)) else None
+
+
+def _json_object(response: requests.Response) -> dict[str, Any] | None:
+    payload = _json_payload(response)
+    return payload if isinstance(payload, dict) else None
 
 
 def _sha256(path: Path) -> str:
@@ -266,6 +419,147 @@ def _activity_list(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
+_ACTIVITY_CATEGORY_BY_TYPE = {
+    "hiking": "Hiking",
+    "walking": "Walking",
+    "running": "Running",
+    "trail_run": "Running",
+    "trail_running": "Running",
+    "cycling": "Biking",
+    "biking": "Biking",
+    "climbing": "Climbing",
+    "rock_climbing": "Climbing",
+    "skiing": "Skiing",
+    "winter_sports": "Skiing",
+    "canoeing": "Canoeing",
+    "kayaking": "Canoeing",
+    "water_sports": "Canoeing",
+    "fitness_equipment": "Other",
+    "other": "Other",
+}
+
+
+def _normalize_activity_type(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    value = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", value.strip())
+    return re.sub(r"[^a-zA-Z0-9]+", "_", value).strip("_").casefold()
+
+
+def _normalize_category_name(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]+", " ", value).strip().casefold()
+
+
+def _activity_type_values(activity: dict[str, Any]) -> list[str]:
+    activity_type = activity.get("activityType")
+    if not isinstance(activity_type, dict):
+        return []
+    return [
+        value
+        for value in (activity_type.get("typeKey"), activity_type.get("parentTypeKey"))
+        if isinstance(value, str)
+    ]
+
+
+def _activity_type_label(activity: dict[str, Any]) -> str | None:
+    for value in _activity_type_values(activity):
+        normalized = _normalize_activity_type(value)
+        if normalized:
+            return normalized
+    return None
+
+
+def wanderer_category_for_activity(activity: dict[str, Any]) -> str | None:
+    """Map Garmin's activity type labels to Wanderer's built-in categories."""
+    for value in _activity_type_values(activity):
+        category = _ACTIVITY_CATEGORY_BY_TYPE.get(_normalize_activity_type(value))
+        if category is not None:
+            return category
+    return None
+
+
+def _activity_name(activity: dict[str, Any], activity_id: str) -> str:
+    value = activity.get("activityName")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return f"Garmin activity {activity_id}"
+
+
+def _activity_has_images(activity: dict[str, Any]) -> bool:
+    return activity.get("hasImages") is True
+
+
+def _trail_id(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    for field in ("id", "trailId", "trail_id"):
+        value = payload.get(field)
+        if isinstance(value, (str, int)) and str(value):
+            return str(value)
+    return None
+
+
+def _trail_file_names(trail: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    for field in ("gpx", "filename", "fileName", "file_name", "routeFilename", "name"):
+        value = trail.get(field)
+        if isinstance(value, str) and value:
+            names.add(PurePosixPath(value.replace("\\", "/")).name.casefold())
+    return names
+
+
+def _garmin_legacy_names(activity_id: str, manifest_item: dict[str, Any] | None) -> set[str]:
+    names = {f"{activity_id}{suffix}" for suffix in SUPPORTED_SUFFIXES}
+    if isinstance(manifest_item, dict):
+        filename = manifest_item.get("filename")
+        if isinstance(filename, str) and filename:
+            names.add(PurePosixPath(filename.replace("\\", "/")).name)
+    return {name.casefold() for name in names}
+
+
+_GARMIN_IMAGE_HOSTS = {
+    "connect.garmin.com",
+    "connectapi.garmin.com",
+    "connect.garmin.cn",
+    "connectapi.garmin.cn",
+}
+_SUPPORTED_PHOTO_SUFFIXES = {".gif", ".jpeg", ".jpg", ".png", ".webp"}
+
+
+def _garmin_photo_request(value: Any) -> tuple[str, list[tuple[str, str]]] | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    parsed = urlparse(value.strip())
+    if parsed.netloc:
+        try:
+            hostname = (parsed.hostname or "").casefold()
+        except ValueError:
+            return None
+        if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password or hostname not in _GARMIN_IMAGE_HOSTS:
+            return None
+    path = parsed.path
+    for prefix in ("/modern/proxy/", "modern/proxy/"):
+        if path.startswith(prefix):
+            path = path[len(prefix) :]
+            break
+    else:
+        path = path.lstrip("/")
+    if not path or "\\" in path or any(part == ".." for part in path.split("/")):
+        return None
+    return path, parse_qsl(parsed.query, keep_blank_values=True)
+
+
+def _photo_suffix(url: str) -> str:
+    suffix = Path(urlparse(url).path).suffix.casefold()
+    return suffix if suffix in _SUPPORTED_PHOTO_SUFFIXES else ".jpg"
+
+
+def _photo_archive_name(activity_id: str, image_id: str, suffix: str) -> str:
+    safe_id = re.sub(r"[^A-Za-z0-9._-]+", "_", image_id).strip("._")[:48] or "image"
+    identity = hashlib.sha256(image_id.encode("utf-8")).hexdigest()[:12]
+    return f"{activity_id}-photo-{safe_id}-{identity}{suffix}"
+
+
 class Pipeline:
     """Run both configured sources through one idempotent upload path."""
 
@@ -291,6 +585,7 @@ class Pipeline:
         self.uploaded = 0
         self.skipped = 0
         self.failures: list[str] = []
+        self._legacy_trails: list[dict[str, Any]] | None = None
 
     def run(self) -> int:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -397,15 +692,211 @@ class Pipeline:
                 return
         raise SyncError("Garmin activity pagination reached GARMIN_MAX_PAGES before completion")
 
+    def _legacy_trail(self, activity_id: str, manifest_item: dict[str, Any] | None) -> dict[str, Any] | None:
+        if self._legacy_trails is None:
+            list_trails = getattr(self.uploader, "list_trails", None)
+            if not callable(list_trails):
+                self._legacy_trails = []
+            else:
+                trails = list_trails()
+                self._legacy_trails = (
+                    [trail for trail in trails if isinstance(trail, dict)]
+                    if isinstance(trails, list)
+                    else []
+                )
+        candidates = _garmin_legacy_names(activity_id, manifest_item)
+        for trail in self._legacy_trails:
+            if _trail_id(trail) and _trail_file_names(trail) & candidates:
+                return trail
+        return None
+
+    def _category_id(self, category_name: str | None) -> str | None:
+        if not category_name:
+            return None
+        category_id = getattr(self.uploader, "category_id", None)
+        if not callable(category_id):
+            return None
+        try:
+            resolved = category_id(category_name)
+        except SyncError as exc:
+            LOGGER.warning("Wanderer category lookup skipped: error=%s", exc.__class__.__name__)
+            return None
+        return resolved if isinstance(resolved, str) and resolved else None
+
+    def _download_garmin_photos(
+        self,
+        client: Any,
+        activity_id: str,
+        activity: dict[str, Any],
+        known_photo_ids: set[str],
+    ) -> list[tuple[str, Path]]:
+        if not _activity_has_images(activity) or self.config.max_photos_per_activity <= 0:
+            return []
+        get_details = getattr(client, "get_activity_details", None)
+        download = getattr(client, "download", None)
+        if not callable(get_details) or not callable(download):
+            return []
+        try:
+            details = get_details(activity_id)
+        except Exception as exc:
+            LOGGER.warning("Garmin activity photo lookup skipped: error=%s", exc.__class__.__name__)
+            return []
+        metadata = details.get("metadataDTO") if isinstance(details, dict) else None
+        if not isinstance(metadata, dict):
+            metadata = details.get("metadata_dto") if isinstance(details, dict) else None
+        if not isinstance(metadata, dict):
+            metadata = details.get("metadata") if isinstance(details, dict) else None
+        images = metadata.get("activityImages") if isinstance(metadata, dict) else None
+        if not isinstance(images, list) and isinstance(details, dict):
+            images = details.get("activityImages")
+        if not isinstance(images, list):
+            return []
+
+        photos: list[tuple[str, Path]] = []
+        seen = set(known_photo_ids)
+        for image in images:
+            if len(photos) >= self.config.max_photos_per_activity:
+                LOGGER.warning(
+                    "Garmin activity photo limit reached: limit=%d",
+                    self.config.max_photos_per_activity,
+                )
+                break
+            if not isinstance(image, dict):
+                continue
+            image_id = image.get("imageId") or image.get("image_id") or image.get("id")
+            if not isinstance(image_id, (str, int)) or not str(image_id):
+                continue
+            image_id = str(image_id)
+            if image_id in seen:
+                continue
+            image_url = next(
+                (
+                    image.get(field)
+                    for field in ("mediumUrl", "url", "smallUrl", "medium_url", "small_url")
+                    if isinstance(image.get(field), str) and image.get(field)
+                ),
+                None,
+            )
+            request = _garmin_photo_request(image_url)
+            if request is None:
+                continue
+            assert isinstance(image_url, str)
+            request_path, params = request
+            try:
+                content = download(request_path, params=params) if params else download(request_path)
+                if not isinstance(content, (bytes, bytearray)) or not content:
+                    continue
+                if len(content) > self.config.max_file_bytes:
+                    raise SyncError("Garmin activity photo exceeds the configured size limit")
+                destination = self.config.archive_dir / "garmin" / _photo_archive_name(
+                    activity_id,
+                    image_id,
+                    _photo_suffix(image_url),
+                )
+                _write_private(destination, bytes(content))
+                photos.append((image_id, destination))
+                seen.add(image_id)
+            except Exception as exc:
+                LOGGER.warning("Garmin activity photo skipped: error=%s", exc.__class__.__name__)
+        return photos
+
+    def _apply_garmin_metadata(
+        self,
+        client: Any,
+        activity_id: str,
+        key: str,
+        activity: dict[str, Any],
+        trail_id: str | None,
+    ) -> str | None:
+        manifest_item = self.manifest.record(key)
+        if trail_id is None:
+            trail = self._legacy_trail(activity_id, manifest_item)
+            trail_id = _trail_id(trail)
+        if trail_id is None:
+            LOGGER.warning("Garmin activity metadata backfill skipped: no matching Wanderer trail")
+            return None
+        name = _activity_name(activity, activity_id)
+        activity_type = _activity_type_label(activity)
+        category_name = wanderer_category_for_activity(activity)
+        category_id = self._category_id(category_name)
+        raw_photo_ids = (manifest_item or {}).get("photo_ids", [])
+        known_photo_ids = (
+            [value for value in raw_photo_ids if isinstance(value, str)]
+            if isinstance(raw_photo_ids, list)
+            else []
+        )
+        photos = self._download_garmin_photos(client, activity_id, activity, set(known_photo_ids))
+        update = getattr(self.uploader, "update", None)
+        category_changed = category_name is not None and category_id is not None and (
+            not manifest_item or manifest_item.get("category") != category_name
+        )
+        metadata_changed = (
+            not manifest_item
+            or manifest_item.get("trail_id") != trail_id
+            or manifest_item.get("activity_name") != name
+            or manifest_item.get("activity_type") != activity_type
+            or category_changed
+            or bool(photos)
+        )
+        if metadata_changed:
+            if not callable(update):
+                raise SyncError("Wanderer uploader does not support metadata updates")
+            update(
+                trail_id,
+                name=name,
+                category_id=category_id,
+                photos=tuple(path for _image_id, path in photos),
+            )
+
+        photo_ids = list(known_photo_ids)
+        photo_ids.extend(image_id for image_id, _path in photos)
+        self.manifest.update_metadata(
+            key,
+            trail_id=trail_id,
+            activity_name=name,
+            activity_type=activity_type,
+            category=category_name if category_id is not None else None,
+            photo_ids=photo_ids,
+        )
+        self.manifest.save()
+        return trail_id
+
     def _process_garmin_activity(self, client: Garmin, activity: dict[str, Any]) -> None:
         activity_id = activity.get("activityId") or activity.get("activity_id")
         if activity_id is None or not str(activity_id).isdigit():
             LOGGER.warning("Garmin activity without a numeric ID was skipped")
             return
+        activity_id = str(activity_id)
         key = f"garmin:{activity_id}"
+        manifest_item = self.manifest.record(key)
         if self.manifest.is_uploaded(key):
+            self._apply_garmin_metadata(
+                client,
+                activity_id,
+                key,
+                activity,
+                _trail_id(manifest_item),
+            )
             self.skipped += 1
             return
+
+        legacy_trail = self._legacy_trail(activity_id, manifest_item) if manifest_item is not None else None
+        if legacy_trail is not None:
+            trail_id = _trail_id(legacy_trail)
+            if trail_id is None:
+                raise SyncError("Wanderer legacy trail has no ID")
+            filename = next(iter(_trail_file_names(legacy_trail)), f"{activity_id}.fit")
+            if manifest_item is None:
+                self.manifest.mark_linked(
+                    key,
+                    filename=filename,
+                    source="garmin",
+                    trail_id=trail_id,
+                )
+            self._apply_garmin_metadata(client, activity_id, key, activity, trail_id)
+            self.skipped += 1
+            return
+
         if self.config.garmin_download_format == "gpx":
             content = client.download_activity(str(activity_id), dl_fmt=Garmin.ActivityDownloadFormat.GPX)
             suffix = ".gpx"
@@ -421,9 +912,25 @@ class Pipeline:
             raise SyncError(f"Garmin activity {activity_id} exceeds the configured size limit")
         destination = self.config.archive_dir / "garmin" / f"{activity_id}{suffix}"
         _write_private(destination, content)
-        self._process_route(destination, key, "garmin")
+        self._process_route(
+            destination,
+            key,
+            "garmin",
+            client=client,
+            activity=activity,
+            activity_id=activity_id,
+        )
 
-    def _process_route(self, source: Path, key: str, source_name: str) -> None:
+    def _process_route(
+        self,
+        source: Path,
+        key: str,
+        source_name: str,
+        *,
+        client: Any | None = None,
+        activity: dict[str, Any] | None = None,
+        activity_id: str | None = None,
+    ) -> None:
         digest = _sha256(source)
         if self.manifest.has_uploaded(key, digest):
             self.skipped += 1
@@ -443,9 +950,25 @@ class Pipeline:
                 temporary_paths.append(temporary)
                 fit_to_gpx(upload_path, temporary)
                 upload_path = temporary
-            self.uploader.upload(upload_path)
-            self.manifest.mark_uploaded(key, digest, filename=upload_path.name, source=source_name)
+            if activity is None:
+                response = self.uploader.upload(upload_path)
+            else:
+                assert activity_id is not None
+                response = self.uploader.upload(upload_path, name=_activity_name(activity, activity_id))
+            trail_id = _trail_id(response)
+            self.manifest.mark_uploaded(
+                key,
+                digest,
+                filename=upload_path.name,
+                source=source_name,
+                trail_id=trail_id,
+            )
             self.manifest.save()
+            if activity is not None:
+                assert client is not None and activity_id is not None
+                if trail_id is None:
+                    self._legacy_trails = None
+                self._apply_garmin_metadata(client, activity_id, key, activity, trail_id)
             self.uploaded += 1
         except (ConversionError, SyncError, OSError) as exc:
             if isinstance(exc, WandererUploadError):

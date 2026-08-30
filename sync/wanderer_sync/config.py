@@ -77,6 +77,7 @@ class Config:
     upload_retries: int = 3
     retry_backoff_seconds: int = 5
     retry_max_backoff_seconds: int = 60
+    max_photos_per_activity: int = 20
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -134,6 +135,7 @@ class Config:
             upload_retries=_integer("UPLOAD_RETRIES", 3, minimum=0, maximum=10),
             retry_backoff_seconds=retry_backoff_seconds,
             retry_max_backoff_seconds=retry_max_backoff_seconds,
+            max_photos_per_activity=_integer("MAX_PHOTOS_PER_ACTIVITY", 20, minimum=0, maximum=100),
         )
 
     def prepare_directories(self) -> None:

@@ -116,6 +116,8 @@ spec:
                   value: {{ printf "%d" (int64 .Values.garminSync.limits.maxZipMembers) | quote }}
                 - name: MAX_ZIP_UNCOMPRESSED_BYTES
                   value: {{ printf "%d" (int64 .Values.garminSync.limits.maxZipUncompressedBytes) | quote }}
+                - name: MAX_PHOTOS_PER_ACTIVITY
+                  value: {{ printf "%d" (int64 .Values.garminSync.limits.maxPhotosPerActivity) | quote }}
                 - name: REQUEST_TIMEOUT_SECONDS
                   value: {{ .Values.garminSync.requestTimeoutSeconds | quote }}
                 - name: UPLOAD_RETRIES
