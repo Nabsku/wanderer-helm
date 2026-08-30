@@ -85,6 +85,8 @@ class Manifest:
         activity_name: str | None = None,
         activity_type: str | None = None,
         category: str | None = None,
+        completed: bool | None = None,
+        description: str | None = None,
         photo_ids: list[str] | None = None,
     ) -> None:
         item = self.record(key)
@@ -98,6 +100,10 @@ class Manifest:
             item["activity_type"] = activity_type
         if category is not None:
             item["category"] = category
+        if completed is not None:
+            item["completed"] = completed
+        if description is not None:
+            item["description"] = description
         if photo_ids is not None:
             item["photo_ids"] = list(dict.fromkeys(photo_ids))
         item["updated_at"] = datetime.now(timezone.utc).isoformat()

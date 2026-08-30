@@ -149,12 +149,18 @@ class WandererUploader:
         *,
         name: str,
         category_id: str | None = None,
+        completed: bool | None = None,
+        description: str | None = None,
         photos: tuple[Path, ...] = (),
     ) -> dict[str, Any] | None:
         if photos:
             data: dict[str, str] = {"id": trail_id, "name": name}
             if category_id is not None:
                 data["category"] = category_id
+            if completed is not None:
+                data["completed"] = str(completed).lower()
+            if description is not None:
+                data["description"] = description
 
             def open_photos() -> tuple[list[tuple[str, tuple[str, Any, str]]], list[Any]]:
                 handles: list[Any] = []
@@ -179,9 +185,13 @@ class WandererUploader:
                 operation="trail update",
             )
         else:
-            data = {"name": name}
+            data: dict[str, str | bool] = {"name": name}
             if category_id is not None:
                 data["category"] = category_id
+            if completed is not None:
+                data["completed"] = completed
+            if description is not None:
+                data["description"] = description
             response = self._request(
                 "post",
                 f"{self.base_url}/api/v1/trail/{trail_id}",
@@ -483,6 +493,13 @@ def _activity_name(activity: dict[str, Any], activity_id: str) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return f"Garmin activity {activity_id}"
+
+
+def _activity_description(activity: dict[str, Any]) -> str | None:
+    value = activity.get("description")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
 
 
 def _activity_has_images(activity: dict[str, Any]) -> bool:
@@ -816,6 +833,7 @@ class Pipeline:
             LOGGER.warning("Garmin activity metadata backfill skipped: no matching Wanderer trail")
             return None
         name = _activity_name(activity, activity_id)
+        description = _activity_description(activity)
         activity_type = _activity_type_label(activity)
         category_name = wanderer_category_for_activity(activity)
         category_id = self._category_id(category_name)
@@ -830,12 +848,18 @@ class Pipeline:
         category_changed = category_name is not None and category_id is not None and (
             not manifest_item or manifest_item.get("category") != category_name
         )
+        completed_changed = not manifest_item or manifest_item.get("completed") is not True
+        description_changed = description is not None and (
+            not manifest_item or manifest_item.get("description") != description
+        )
         metadata_changed = (
             not manifest_item
             or manifest_item.get("trail_id") != trail_id
             or manifest_item.get("activity_name") != name
             or manifest_item.get("activity_type") != activity_type
             or category_changed
+            or completed_changed
+            or description_changed
             or bool(photos)
         )
         if metadata_changed:
@@ -845,6 +869,8 @@ class Pipeline:
                 trail_id,
                 name=name,
                 category_id=category_id,
+                completed=True,
+                description=description,
                 photos=tuple(path for _image_id, path in photos),
             )
 
@@ -856,6 +882,8 @@ class Pipeline:
             activity_name=name,
             activity_type=activity_type,
             category=category_name if category_id is not None else None,
+            completed=True,
+            description=description,
             photo_ids=photo_ids,
         )
         self.manifest.save()
