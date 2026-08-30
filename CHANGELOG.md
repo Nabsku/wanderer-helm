@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/Nabsku/wanderer-helm/compare/v0.3.0...v0.4.0) (2026-08-30)
+
+
+### Features
+
+* **chart:** document Garmin trail metadata ([3427b7d](https://github.com/Nabsku/wanderer-helm/commit/3427b7de574af70a186a87ffc1ae81d649ca393e))
+
 ## [0.3.0](https://github.com/Nabsku/wanderer-helm/compare/v0.2.3...v0.3.0) (2026-08-30)
 
 

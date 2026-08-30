@@ -279,7 +279,7 @@ garminSync:
   ttlSecondsAfterFinished: 86400
   image:
     repository: ghcr.io/nabsku/wanderer-garmin-sync
-    tag: "0.3.0" # x-release-please-version
+    tag: "0.4.0" # x-release-please-version
     digest: ""
     pullPolicy: IfNotPresent
   sources:
