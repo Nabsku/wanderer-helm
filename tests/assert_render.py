@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from collections import Counter
 from pathlib import Path
 
@@ -53,6 +54,13 @@ def assert_common(docs: list[dict]) -> None:
     web_env = env_map(web_container)
     db_env = env_map(db_container)
     search_env = env_map(search_container)
+    proxy_ref = web_env["POCKETBASE_PROXY_SECRET"]["valueFrom"]["secretKeyRef"]
+    assert proxy_ref == db_env["POCKETBASE_PROXY_SECRET"]["valueFrom"]["secretKeyRef"]
+    assert proxy_ref["key"] == "pocketbase-proxy-secret"
+    secrets = by_kind(docs, "Secret")
+    if secrets:
+        secret = one(docs, "Secret", proxy_ref["name"])
+        assert len(base64.b64decode(secret["data"][proxy_ref["key"]])) >= 32
     assert "MEILI_MASTER_KEY" not in web_env
     assert db_env["MEILI_MASTER_KEY"]["valueFrom"]["secretKeyRef"]["name"]
     assert db_env["POCKETBASE_ENCRYPTION_KEY"]["valueFrom"]["secretKeyRef"]["name"]

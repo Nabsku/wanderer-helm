@@ -2,10 +2,10 @@
 
 A Helm chart for [Wanderer](https://github.com/open-wanderer/wanderer), the self-hosted trail catalogue.
 
-This chart deploys the three components used by Wanderer `v0.20.0`.
+This chart deploys the three components used by Wanderer `v0.21.0`.
 
-- `flomp/wanderer-web:v0.20.0`
-- `flomp/wanderer-db:v0.20.0` (PocketBase)
+- `flomp/wanderer-web:v0.21.0`
+- `flomp/wanderer-db:v0.21.0` (PocketBase)
 - `getmeili/meilisearch:v1.36.0`
 
 The chart is versioned independently from the upstream Wanderer application.
@@ -76,12 +76,45 @@ secret:
 The referenced Secret must contain the keys configured by `secret.keys`:
 
 - `pocketbase-encryption-key`: exactly 32 characters;
+- `pocketbase-proxy-secret`: a random shared secret of at least 32 characters;
 - `meili-master-key`: at least 32 characters.
 
 If `secret.existingSecret` is empty, the chart creates a Secret and generates high-entropy values at install time. Helm `lookup` preserves chart-generated values across upgrades. Do not rotate either key by changing a normal Helm value after data exists:
 
 - changing the PocketBase key can make encrypted data unreadable;
 - changing the Meilisearch key requires coordinated restart and index handling.
+
+### Upgrade to Wanderer v0.21.0
+
+This release requires `POCKETBASE_PROXY_SECRET` with the same value on web and
+database. The chart references one Secret key from both workloads. With a
+chart-managed Secret, Helm generates the new value on upgrade and preserves
+the existing encryption and search keys.
+
+If you use `secret.existingSecret`, add `pocketbase-proxy-secret` to that Secret
+**before upgrading**. Generate it with `openssl rand -hex 32` and store it in
+your secret manager, not in Git. A different key name can be set with
+`secret.keys.pocketbaseProxy`. A missing key prevents the pods from starting;
+an empty or mismatched value breaks incoming federation. Rotate this secret
+only with a coordinated restart of web and database. External Secret content
+changes do not automatically restart pods.
+
+The chart generates a 64-character random value by default. Explicit
+`secret.pocketbaseProxySecret` values must have at least 32 characters, matching
+the chart's shared-secret strength policy. Prefer external Secrets for GitOps:
+offline rendering cannot look up and preserve generated values.
+
+The new optional `OIDC_SCOPES` variable uses the existing environment extension:
+
+```yaml
+database:
+  extraEnv:
+    - name: OIDC_SCOPES
+      value: "openid,profile,email"
+```
+
+The synchronizer already uses the supported trail `form/{id}` endpoint for
+photo updates; it does not use the newly deprecated trail `/file` endpoint.
 
 ## Storage and recovery
 
@@ -300,7 +333,7 @@ Every invocation appends a timestamp to `KIND_NAMESPACE`, so it creates a new Wa
 ## Upstream references
 
 - [Wanderer repository](https://github.com/open-wanderer/wanderer)
-- [Wanderer Docker Compose](https://github.com/open-wanderer/wanderer/blob/v0.20.0/docker-compose.yml)
+- [Wanderer Docker Compose](https://github.com/open-wanderer/wanderer/blob/v0.21.0/docker-compose.yml)
 - [Environment configuration](https://wanderer.to/run/environment-configuration)
 - [Backup guidance](https://wanderer.to/run/backend-configuration/backup-server)
 - [Plugin installation](https://wanderer.to/run/installation/plugins)

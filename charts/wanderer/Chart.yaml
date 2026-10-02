@@ -3,9 +3,9 @@ name: wanderer
 description: Helm chart for the self-hosted Wanderer trail catalogue.
 type: application
 version: 0.4.0
-appVersion: "0.20.0"
+appVersion: "0.21.0"
 kubeVersion: ">=1.25.0-0"
-icon: https://raw.githubusercontent.com/open-wanderer/wanderer/v0.20.0/web/static/svgs/logo_text_two_line_dark.svg
+icon: https://raw.githubusercontent.com/open-wanderer/wanderer/v0.21.0/web/static/svgs/logo_text_two_line_dark.svg
 home: https://wanderer.to/
 sources:
   - https://github.com/open-wanderer/wanderer
@@ -33,9 +33,9 @@ annotations:
           url: https://github.com/Nabsku/wanderer-helm
   artifacthub.io/images: |
     - name: Wanderer web
-      image: flomp/wanderer-web:v0.20.0
+      image: flomp/wanderer-web:v0.21.0
     - name: Wanderer database
-      image: flomp/wanderer-db:v0.20.0
+      image: flomp/wanderer-db:v0.21.0
     - name: Meilisearch
       image: getmeili/meilisearch:v1.36.0
     - name: Garmin synchronizer

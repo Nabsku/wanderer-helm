@@ -51,4 +51,6 @@ search:
     size: 20Gi
 
 secret:
+  # Must contain pocketbase-encryption-key, meili-master-key, and
+  # pocketbase-proxy-secret (shared by web and database since v0.21.0).
   existingSecret: wanderer-secrets

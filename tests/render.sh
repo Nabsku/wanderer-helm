@@ -70,6 +70,30 @@ if helm lint "$chart" -f "$root/examples/values-garmin-sync.yaml" \
   exit 1
 fi
 
+if helm lint "$chart" -f "$root/examples/values-minimal.yaml" \
+  --set secret.pocketbaseProxySecret=short >"$out/short-proxy.log" 2>&1; then
+  echo "expected a short proxy secret to fail schema validation" >&2
+  exit 1
+fi
+grep -q pocketbaseProxySecret "$out/short-proxy.log"
+
+helm template wanderer "$chart" -n wanderer \
+  -f "$root/examples/values-minimal.yaml" \
+  --set secret.existingSecret=external-secrets \
+  --set secret.keys.pocketbaseProxy=custom-proxy > "$out/external.yaml"
+python3 - "$out/external.yaml" <<'PY'
+import sys
+import yaml
+
+docs = list(yaml.safe_load_all(open(sys.argv[1])))
+assert not any(doc and doc['kind'] == 'Secret' for doc in docs)
+for doc in docs:
+    if doc and doc['kind'] in ('Deployment', 'StatefulSet') and doc['metadata']['name'] in ('wanderer-web', 'wanderer-database'):
+        env = doc['spec']['template']['spec']['containers'][0]['env']
+        proxy = next(entry for entry in env if entry['name'] == 'POCKETBASE_PROXY_SECRET')
+        assert proxy['valueFrom']['secretKeyRef'] == {'name': 'external-secrets', 'key': 'custom-proxy'}
+PY
+
 helm package "$chart" --destination "$out"
 chart_version=$(python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["version"])' "$chart/Chart.yaml")
 package="$out/wanderer-${chart_version}.tgz"

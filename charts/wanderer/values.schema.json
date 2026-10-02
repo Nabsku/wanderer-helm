@@ -889,6 +889,10 @@
               "type": "string",
               "minLength": 1
             },
+            "pocketbaseProxy": {
+              "type": "string",
+              "minLength": 1
+            },
             "meiliMaster": {
               "type": "string",
               "minLength": 1
@@ -896,12 +900,17 @@
           },
           "required": [
             "pocketbaseEncryption",
+            "pocketbaseProxy",
             "meiliMaster"
           ]
         },
         "pocketbaseEncryptionKey": {
           "type": "string",
           "pattern": "^(|.{32})$"
+        },
+        "pocketbaseProxySecret": {
+          "type": "string",
+          "pattern": "^(|.{32,})$"
         },
         "meiliMasterKey": {
           "type": "string",
@@ -919,6 +928,7 @@
         "name",
         "keys",
         "pocketbaseEncryptionKey",
+        "pocketbaseProxySecret",
         "meiliMasterKey",
         "annotations"
       ]
