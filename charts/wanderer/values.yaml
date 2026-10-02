@@ -10,7 +10,7 @@ web:
     type: Recreate
   image:
     repository: flomp/wanderer-web
-    tag: v0.20.0
+    tag: v0.21.0
     digest: ""
     pullPolicy: IfNotPresent
   service:
@@ -98,7 +98,7 @@ database:
   replicaCount: 1
   image:
     repository: flomp/wanderer-db
-    tag: v0.20.0
+    tag: v0.21.0
     digest: ""
     pullPolicy: IfNotPresent
   service:
@@ -358,8 +358,12 @@ secret:
   name: ""
   keys:
     pocketbaseEncryption: pocketbase-encryption-key
+    pocketbaseProxy: pocketbase-proxy-secret
     meiliMaster: meili-master-key
   pocketbaseEncryptionKey: ""
+  # Shared by web and database to authenticate federation proxy requests.
+  # Generated once and preserved on upgrade when left empty.
+  pocketbaseProxySecret: ""
   meiliMasterKey: ""
   annotations: {}
 

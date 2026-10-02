@@ -79,6 +79,11 @@ spec:
               containerPort: 3000
               protocol: TCP
           env:
+            - name: POCKETBASE_PROXY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wanderer.secretName" . }}
+                  key: {{ .Values.secret.keys.pocketbaseProxy }}
             - name: ORIGIN
               value: {{ include "wanderer.origin" . | quote }}
             - name: MEILI_URL

@@ -130,6 +130,8 @@ rendered Secret is only emitted when secret.existingSecret is empty.
 {{- $existing := lookup "v1" "Secret" .Release.Namespace $secretName -}}
 {{- $pbKeyName := .Values.secret.keys.pocketbaseEncryption -}}
 {{- $meiliKeyName := .Values.secret.keys.meiliMaster -}}
+{{- $proxyKeyName := .Values.secret.keys.pocketbaseProxy -}}
+{{- $proxyKey := .Values.secret.pocketbaseProxySecret -}}
 {{- $pbKey := .Values.secret.pocketbaseEncryptionKey | default "" -}}
 {{- $meiliKey := .Values.secret.meiliMasterKey | default "" -}}
 {{- if eq $pbKey "" }}
@@ -146,6 +148,14 @@ rendered Secret is only emitted when secret.existingSecret is empty.
     {{- $meiliKey = randAlphaNum 48 -}}
   {{- end }}
 {{- end }}
+{{- if eq $proxyKey "" }}
+  {{- if and $existing $existing.data (hasKey $existing.data $proxyKeyName) }}
+    {{- $proxyKey = (index $existing.data $proxyKeyName | b64dec) -}}
+  {{- else }}
+    {{- $proxyKey = randAlphaNum 64 -}}
+  {{- end }}
+{{- end }}
+{{ $proxyKeyName }}: {{ $proxyKey | b64enc | quote }}
 {{ $pbKeyName }}: {{ $pbKey | b64enc | quote }}
 {{ $meiliKeyName }}: {{ $meiliKey | b64enc | quote }}
 {{- end }}
@@ -153,7 +163,7 @@ rendered Secret is only emitted when secret.existingSecret is empty.
 {{/* Pod restart checksum for chart-managed secret material. */}}
 {{- define "wanderer.secretChecksum" -}}
 {{- if .Values.secret.existingSecret }}
-{{- printf "%s:%s:%s" .Values.secret.existingSecret .Values.secret.keys.pocketbaseEncryption .Values.secret.keys.meiliMaster | sha256sum }}
+{{- printf "%s:%s:%s:%s" .Values.secret.existingSecret .Values.secret.keys.pocketbaseEncryption .Values.secret.keys.meiliMaster .Values.secret.keys.pocketbaseProxy | sha256sum }}
 {{- else }}
 {{- include "wanderer.secretData" . | sha256sum }}
 {{- end }}
