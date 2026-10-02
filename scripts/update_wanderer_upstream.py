@@ -43,11 +43,11 @@ def read_required(path: Path) -> str:
         raise RuntimeError(f"cannot read {path}: {exc}") from exc
 
 
-def replace_exact(text: str, old: str, new: str, path: Path, expected: int = 1) -> str:
+def replace_exact(text: str, old: str, new: str, path: Path) -> str:
     count = text.count(old)
-    if count != expected:
+    if count != 1:
         raise RuntimeError(
-            f"{path}: expected {expected} occurrence(s) of {old!r}, found {count}"
+            f"{path}: expected 1 occurrence of {old!r}, found {count}"
         )
     return text.replace(old, new)
 
@@ -107,7 +107,19 @@ def update(root: Path, requested_version: str) -> list[Path]:
         f"https://raw.githubusercontent.com/open-wanderer/wanderer/{new_tag}/",
         chart_path,
     )
-    readme = replace_exact(readme, old_tag, new_tag, readme_path, expected=3)
+    # Match current-release references, not historical version mentions.
+    for reference in (
+        "This chart deploys the three components used by Wanderer `{tag}`",
+        "https://github.com/open-wanderer/wanderer/blob/{tag}/docker-compose.yml",
+    ):
+        readme = replace_exact(
+            readme, reference.format(tag=old_tag), reference.format(tag=new_tag), readme_path
+        )
+    for repository in ("flomp/wanderer-web", "flomp/wanderer-db"):
+        old_image = f"{repository}:{old_tag}"
+        new_image = f"{repository}:{new_tag}"
+        chart = replace_exact(chart, old_image, new_image, chart_path)
+        readme = replace_exact(readme, old_image, new_image, readme_path)
 
     changed: list[Path] = []
     for path, content in (
