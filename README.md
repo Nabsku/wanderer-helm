@@ -2,10 +2,10 @@
 
 A Helm chart for [Wanderer](https://github.com/open-wanderer/wanderer), the self-hosted trail catalogue.
 
-This chart deploys the three components used by Wanderer `v0.21.0`.
+This chart deploys the three components used by Wanderer `v0.21.2`.
 
-- `flomp/wanderer-web:v0.21.0`
-- `flomp/wanderer-db:v0.21.0` (PocketBase)
+- `flomp/wanderer-web:v0.21.2`
+- `flomp/wanderer-db:v0.21.2` (PocketBase)
 - `getmeili/meilisearch:v1.36.0`
 
 The chart is versioned independently from the upstream Wanderer application.
@@ -338,7 +338,7 @@ Every invocation appends a timestamp to `KIND_NAMESPACE`, so it creates a new Wa
 ## Upstream references
 
 - [Wanderer repository](https://github.com/open-wanderer/wanderer)
-- [Wanderer Docker Compose](https://github.com/open-wanderer/wanderer/blob/v0.21.0/docker-compose.yml)
+- [Wanderer Docker Compose](https://github.com/open-wanderer/wanderer/blob/v0.21.2/docker-compose.yml)
 - [Environment configuration](https://wanderer.to/run/environment-configuration)
 - [Backup guidance](https://wanderer.to/run/backend-configuration/backup-server)
 - [Plugin installation](https://wanderer.to/run/installation/plugins)

@@ -10,7 +10,7 @@ web:
     type: Recreate
   image:
     repository: flomp/wanderer-web
-    tag: v0.21.0
+    tag: v0.21.2
     digest: ""
     pullPolicy: IfNotPresent
   service:
@@ -98,7 +98,7 @@ database:
   replicaCount: 1
   image:
     repository: flomp/wanderer-db
-    tag: v0.21.0
+    tag: v0.21.2
     digest: ""
     pullPolicy: IfNotPresent
   service:
