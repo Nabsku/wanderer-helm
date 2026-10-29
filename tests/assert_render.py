@@ -51,6 +51,7 @@ def assert_common(docs: list[dict]) -> None:
     web_container = web["spec"]["template"]["spec"]["containers"][0]
     db_container = database["spec"]["template"]["spec"]["containers"][0]
     search_container = search["spec"]["template"]["spec"]["containers"][0]
+    assert "--encryptionEnv=POCKETBASE_ENCRYPTION_KEY" in db_container.get("args", []), "PocketBase must use the configured settings encryption key"
     web_env = env_map(web_container)
     db_env = env_map(db_container)
     search_env = env_map(search_container)

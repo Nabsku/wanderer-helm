@@ -84,6 +84,11 @@ If `secret.existingSecret` is empty, the chart creates a Secret and generates hi
 - changing the PocketBase key can make encrypted data unreadable;
 - changing the Meilisearch key requires coordinated restart and index handling.
 
+PocketBase starts with `--encryptionEnv=POCKETBASE_ENCRYPTION_KEY` so it can read
+encrypted settings with the configured key. Keep the key that encrypted the
+existing settings when upgrading; this flag does not reset settings or recover
+data encrypted with a different key.
+
 ### Upgrade to Wanderer v0.21.0
 
 This release requires `POCKETBASE_PROXY_SECRET` with the same value on web and

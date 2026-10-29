@@ -71,6 +71,7 @@ spec:
         - name: database
           image: {{ include "wanderer.image" .Values.database.image | quote }}
           imagePullPolicy: {{ .Values.database.image.pullPolicy }}
+          args: ["--encryptionEnv=POCKETBASE_ENCRYPTION_KEY"]
           securityContext:
             {{- toYaml .Values.database.securityContext | nindent 12 }}
           ports:
