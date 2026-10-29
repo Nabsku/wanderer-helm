@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 (2026-10-29)
+
+### Fixes
+
+- use the PocketBase encryption key (#23)
+
 ## 0.4.1 (2026-10-02)
 
 ### Features
