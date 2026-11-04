@@ -40,7 +40,7 @@ def env_map(container: dict) -> dict:
     return {entry["name"]: entry for entry in container.get("env", [])}
 
 
-def assert_common(docs: list[dict]) -> None:
+def assert_common(docs: list[dict], curl_image: str, curl_pull_policy: str) -> None:
     web = one(docs, "Deployment", "wanderer-web")
     database = one(docs, "StatefulSet", "wanderer-database")
     search = one(docs, "StatefulSet", "wanderer-search")
@@ -48,6 +48,15 @@ def assert_common(docs: list[dict]) -> None:
     assert search["spec"]["replicas"] == 1
     assert database["spec"]["template"]["spec"]["initContainers"][0]["name"] == "wait-for-search"
     assert web["spec"]["template"]["spec"]["initContainers"][0]["name"] == "wait-for-dependencies"
+    connectivity = one(docs, "Pod", "wanderer-connectivity")
+    curl_containers = [
+        database["spec"]["template"]["spec"]["initContainers"][0],
+        web["spec"]["template"]["spec"]["initContainers"][0],
+        connectivity["spec"]["containers"][0],
+    ]
+    for container in curl_containers:
+        assert container["image"] == curl_image, f"{container['name']}: {container['image']} != {curl_image}"
+        assert container["imagePullPolicy"] == curl_pull_policy, container
     web_container = web["spec"]["template"]["spec"]["containers"][0]
     db_container = database["spec"]["template"]["spec"]["containers"][0]
     search_container = search["spec"]["template"]["spec"]["containers"][0]
@@ -75,9 +84,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("manifest")
     parser.add_argument("--mode", choices=["minimal", "production", "network", "garmin"], required=True)
+    parser.add_argument("--curl-image", default="curlimages/curl:8.18.0")
+    parser.add_argument("--curl-pull-policy", default="IfNotPresent")
     args = parser.parse_args()
     docs = load(args.manifest)
-    assert_common(docs)
+    assert_common(docs, args.curl_image, args.curl_pull_policy)
     ingresses = by_kind(docs, "Ingress")
     policies = by_kind(docs, "NetworkPolicy")
     if args.mode == "minimal":

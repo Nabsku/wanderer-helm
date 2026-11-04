@@ -58,8 +58,8 @@ spec:
       {{- end }}
       initContainers:
         - name: wait-for-dependencies
-          image: curlimages/curl:8.18.0
-          imagePullPolicy: IfNotPresent
+          image: {{ include "wanderer.image" .Values.tools.curl.image | quote }}
+          imagePullPolicy: {{ .Values.tools.curl.image.pullPolicy }}
           command: ["/bin/sh", "-ec"]
           args:
             - >-

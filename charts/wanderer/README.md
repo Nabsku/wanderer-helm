@@ -47,6 +47,25 @@ The chart defaults to:
 
 The upstream images do not declare a non-root user. The chart therefore does not set `runAsNonRoot` by default. Check image UIDs and volume permissions before enabling it.
 
+## Curl helper image
+
+The web and database init containers and the connectivity test hook share
+`tools.curl.image`. Defaults preserve `curlimages/curl:8.18.0`:
+
+```yaml
+tools:
+  curl:
+    image:
+      repository: curlimages/curl
+      tag: "8.18.0"
+      digest: ""
+      pullPolicy: IfNotPresent
+```
+
+Set `repository` and `tag` to use a mirror. A non-empty `digest` must be
+`sha256:<64 lowercase hex characters>` and takes precedence over `tag`,
+rendering `repository@digest`. The helper image must provide curl and `/bin/sh`.
+
 ## Secrets and storage
 
 For GitOps, use an External Secrets Operator, SOPS, or another secret manager:

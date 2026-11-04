@@ -32,6 +32,26 @@ helm template wanderer "$chart" -n wanderer \
   -f "$root/examples/values-garmin-sync.yaml" > "$out/garmin.yaml"
 python3 "$root/tests/assert_render.py" "$out/garmin.yaml" --mode garmin
 
+curl_repository=registry.example.invalid/tools/curl
+helm template wanderer "$chart" -n wanderer \
+  -f "$root/examples/values-minimal.yaml" \
+  --set-string tools.curl.image.repository="$curl_repository" \
+  --set-string tools.curl.image.tag=8.18.0-mirror \
+  --set tools.curl.image.pullPolicy=Always > "$out/curl-tag.yaml"
+python3 "$root/tests/assert_render.py" "$out/curl-tag.yaml" --mode minimal \
+  --curl-image "$curl_repository:8.18.0-mirror" --curl-pull-policy Always
+
+# Synthetic digest tests rendering only; no image is fetched.
+curl_digest="sha256:$(printf '%064d' 0)"
+helm template wanderer "$chart" -n wanderer \
+  -f "$root/examples/values-minimal.yaml" \
+  --set-string tools.curl.image.repository="$curl_repository" \
+  --set-string tools.curl.image.tag=8.18.0-mirror \
+  --set-string tools.curl.image.digest="$curl_digest" \
+  --set tools.curl.image.pullPolicy=Never > "$out/curl-digest.yaml"
+python3 "$root/tests/assert_render.py" "$out/curl-digest.yaml" --mode minimal \
+  --curl-image "$curl_repository@$curl_digest" --curl-pull-policy Never
+
 if helm lint "$chart" >/dev/null 2>&1; then
   echo "expected default values to fail because web.origin and publicPocketbaseURL are required" >&2
   exit 1
@@ -76,6 +96,20 @@ if helm lint "$chart" -f "$root/examples/values-minimal.yaml" \
   exit 1
 fi
 grep -q pocketbaseProxySecret "$out/short-proxy.log"
+
+if helm lint "$chart" -f "$root/examples/values-minimal.yaml" \
+  --set-string tools.curl.image.digest=sha256:invalid >"$out/curl-digest.log" 2>&1; then
+  echo "expected an invalid curl image digest to fail schema validation" >&2
+  exit 1
+fi
+grep -q tools.curl.image.digest "$out/curl-digest.log"
+
+if helm lint "$chart" -f "$root/examples/values-minimal.yaml" \
+  --set tools.curl.image.pullPolicy=Sometimes >"$out/curl-policy.log" 2>&1; then
+  echo "expected an invalid curl image pull policy to fail schema validation" >&2
+  exit 1
+fi
+grep -q tools.curl.image.pullPolicy "$out/curl-policy.log"
 
 helm template wanderer "$chart" -n wanderer \
   -f "$root/examples/values-minimal.yaml" \

@@ -259,6 +259,16 @@ search:
   affinity: {}
   topologySpreadConstraints: []
 
+# Shared by the web/database init containers and the connectivity test hook.
+tools:
+  curl:
+    image:
+      repository: curlimages/curl
+      # Unquoted so Knope does not treat this as the chart release version.
+      tag: 8.18.0
+      digest: ""
+      pullPolicy: IfNotPresent
+
 garminSync:
   # Disabled by default. Enable only after creating the required API-token
   # Secret and, for Garmin Connect, the credential Secret.
