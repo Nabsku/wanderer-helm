@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.3 (2026-11-05)
+
+### Features
+
+- allow curl helper image overrides (#26)
+
+### Fixes
+
+- update Wanderer to v0.21.2
+
 ## 0.4.2 (2026-10-29)
 
 ### Fixes
