@@ -12,6 +12,9 @@
     "search": {
       "$ref": "#/definitions/search"
     },
+    "tools": {
+      "$ref": "#/definitions/tools"
+    },
     "secret": {
       "$ref": "#/definitions/secret"
     },
@@ -47,6 +50,27 @@
     "secret"
   ],
   "definitions": {
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "curl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image": {
+              "$ref": "#/definitions/image"
+            }
+          },
+          "required": [
+            "image"
+          ]
+        }
+      },
+      "required": [
+        "curl"
+      ]
+    },
     "image": {
       "type": "object",
       "additionalProperties": false,

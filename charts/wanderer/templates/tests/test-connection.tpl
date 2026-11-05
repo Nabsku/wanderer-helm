@@ -14,8 +14,8 @@ spec:
   automountServiceAccountToken: false
   containers:
     - name: curl
-      image: curlimages/curl:8.18.0
-      imagePullPolicy: IfNotPresent
+      image: {{ include "wanderer.image" .Values.tools.curl.image | quote }}
+      imagePullPolicy: {{ .Values.tools.curl.image.pullPolicy }}
       command:
         - sh
         - -ec
