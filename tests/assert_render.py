@@ -10,8 +10,16 @@ from pathlib import Path
 import yaml
 
 
+class UniqueKeyLoader(yaml.SafeLoader):
+    def construct_mapping(self, node, deep=False):
+        keys = [self.construct_object(key, deep=deep) for key, _ in node.value]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate YAML mapping key")
+        return super().construct_mapping(node, deep=deep)
+
+
 def load(path: str) -> list[dict]:
-    docs = [doc for doc in yaml.safe_load_all(Path(path).read_text()) if doc]
+    docs = [doc for doc in yaml.load_all(Path(path).read_text(), Loader=UniqueKeyLoader) if doc]
     assert docs, f"no manifests rendered from {path}"
     for doc in docs:
         assert doc.get("apiVersion"), doc

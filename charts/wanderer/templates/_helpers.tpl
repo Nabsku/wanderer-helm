@@ -22,15 +22,10 @@
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/* Common labels. */}}
+{{/* Merge explicit common labels without duplicate YAML keys. */}}
 {{- define "wanderer.labels" -}}
-helm.sh/chart: {{ include "wanderer.chart" . }}
-{{ include "wanderer.selectorLabels" . }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{- with .Values.commonLabels }}
-{{ toYaml . }}
-{{- end }}
+{{- $labels := dict "helm.sh/chart" (include "wanderer.chart" .) "app.kubernetes.io/name" (include "wanderer.name" .) "app.kubernetes.io/instance" .Release.Name "app.kubernetes.io/version" .Chart.AppVersion "app.kubernetes.io/managed-by" .Release.Service -}}
+{{- mergeOverwrite $labels .Values.commonLabels | toYaml -}}
 {{- end }}
 
 {{/* Stable identity labels shared by all resources. */}}
