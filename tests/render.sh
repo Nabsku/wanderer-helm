@@ -128,6 +128,77 @@ for doc in docs:
         assert proxy['valueFrom']['secretKeyRef'] == {'name': 'external-secrets', 'key': 'custom-proxy'}
 PY
 
+# Existing Secrets keep upgrade comparisons deterministic and preserve auth.
+helm template wanderer "$chart" -n wanderer \
+  -f "$root/examples/values-garmin-sync.yaml" \
+  --set secret.existingSecret=external-secrets \
+  --set-string 'commonLabels.helm\.sh/chart=preserved-chart-label' > "$out/labels.yaml"
+python3 "$root/tests/assert_render.py" "$out/labels.yaml" --mode garmin
+cp -R "$chart" "$out/next-chart"
+python3 - "$out/next-chart/Chart.yaml" <<'PY'
+from pathlib import Path
+import sys
+import yaml
+
+path = Path(sys.argv[1])
+chart = yaml.safe_load(path.read_text())
+major, minor, patch = map(int, chart["version"].split("."))
+chart["version"] = f"{major}.{minor}.{patch + 1}"
+path.write_text(yaml.safe_dump(chart, sort_keys=False))
+PY
+helm template wanderer "$out/next-chart" -n wanderer \
+  -f "$root/examples/values-garmin-sync.yaml" \
+  --set secret.existingSecret=external-secrets \
+  --set-string 'commonLabels.helm\.sh/chart=preserved-chart-label' > "$out/next-labels.yaml"
+
+helm template wanderer "$chart" -n wanderer \
+  -f "$root/examples/values-garmin-sync.yaml" \
+  --set secret.existingSecret=external-secrets > "$out/search-default.yaml"
+helm template wanderer "$chart" -n wanderer \
+  -f "$root/examples/values-garmin-sync.yaml" \
+  --set secret.existingSecret=external-secrets \
+  --set search.replicaCount=0 > "$out/search-maintenance.yaml"
+helm template wanderer "$chart" -n wanderer \
+  -f "$root/examples/values-garmin-sync.yaml" \
+  --set secret.existingSecret=external-secrets \
+  --set search.persistence.existingClaim=search-v2 > "$out/search-resume.yaml"
+python3 - "$root/tests" "$out" <<'PY'
+import copy
+from pathlib import Path
+import sys
+sys.path.insert(0, sys.argv[1])
+from assert_render import load
+
+out = Path(sys.argv[2])
+def resources(name):
+    return {(o["kind"], o["metadata"]["name"]): o for o in load(str(out / name))}
+
+assert resources("labels.yaml") == resources("next-labels.yaml"), "retained common labels must prevent unrelated upgrade changes"
+baseline = resources("search-default.yaml")
+expected = copy.deepcopy(baseline)
+expected[("StatefulSet", "wanderer-search")]["spec"]["replicas"] = 0
+assert resources("search-maintenance.yaml") == expected, "maintenance must change only search replica count and retain its PVC"
+expected = copy.deepcopy(baseline)
+expected.pop(("PersistentVolumeClaim", "wanderer-search-data"))
+volumes = expected[("StatefulSet", "wanderer-search")]["spec"]["template"]["spec"]["volumes"]
+next(v for v in volumes if v["name"] == "search-data")["persistentVolumeClaim"]["claimName"] = "search-v2"
+assert resources("search-resume.yaml") == expected, "existingClaim must change only the search mount and old chart PVC"
+PY
+for replicas in -1 2 0.5 false; do
+  if helm template wanderer "$chart" -n wanderer \
+    -f "$root/examples/values-garmin-sync.yaml" \
+    --set "search.replicaCount=$replicas" >/dev/null 2>&1; then
+    printf 'expected invalid search replica count to fail: %s\n' "$replicas" >&2
+    exit 1
+  fi
+done
+if helm template wanderer "$chart" -n wanderer \
+  -f "$root/examples/values-garmin-sync.yaml" \
+  --set-string search.replicaCount=0 >/dev/null 2>&1; then
+  echo 'expected a string search replica count to fail' >&2
+  exit 1
+fi
+
 helm package "$chart" --destination "$out"
 chart_version=$(python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["version"])' "$chart/Chart.yaml")
 package="$out/wanderer-${chart_version}.tgz"

@@ -79,6 +79,32 @@ The Secret must contain the keys configured by `secret.keys`. If no existing Sec
 
 PVCs are retained by default after `helm uninstall`. Delete retained PVCs only after a verified backup and an explicit operator decision.
 
+### Search-only storage maintenance
+
+`search.replicaCount` accepts only `0` or `1` and defaults to `1`. Set it to
+`0` for planned Meilisearch maintenance; the search Service and original PVC
+remain declared. Wait for the writer to stop and the volume to detach before
+copying data. `search.persistence.existingClaim` selects an independently
+prepared claim and stops declaring the old chart PVC. Keep the old binding
+and disable pruning until full data, history, settings and authentication
+recovery is verified. Restore `search.replicaCount: 1` only after the copy
+and its independent recheck. Scaling to zero does not reset or rebuild data.
+
+A chart-version label change can restart otherwise unchanged Pod templates.
+The existing `commonLabels` map overrides default labels without duplicate
+YAML keys. During a storage-only chart upgrade, retain the installed
+`helm.sh/chart` label explicitly when no other rollout is intended:
+
+```yaml
+commonLabels:
+  helm.sh/chart: wanderer-0.4.3 # Use the actual installed label.
+```
+
+The chart version still comes from the release or GitOps source. Compare
+all rendered workload specs and Pod templates before upgrading; do not use
+ignore rules to hide differences or override selector identity labels.
+Keep image digests and mounted configuration unchanged.
+
 ## Garmin synchronizer
 
 The optional `garminSync` CronJob is suspended by default. It can process Garmin Connect downloads or official Garmin account-export ZIP files and uploads routes through the Wanderer API.
