@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.4 (2026-11-13)
+
+### Fixes
+
+- support search-only storage maintenance (#27)
+
 ## 0.4.3 (2026-11-05)
 
 ### Features
