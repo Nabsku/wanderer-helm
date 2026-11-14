@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.5 (2026-11-14)
+
+### Fixes
+
+- allow offline database and web maintenance (#29)
+
 ## 0.4.4 (2026-11-13)
 
 ### Fixes
