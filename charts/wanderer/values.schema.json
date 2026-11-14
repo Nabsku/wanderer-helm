@@ -382,7 +382,7 @@
         },
         "replicaCount": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 0
         },
         "revisionHistoryLimit": {
           "type": "integer",
@@ -556,7 +556,8 @@
       "additionalProperties": false,
       "properties": {
         "replicaCount": {
-          "const": 1
+          "type": "integer",
+          "enum": [0, 1]
         },
         "image": {
           "$ref": "#/definitions/image"
