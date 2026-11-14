@@ -162,6 +162,18 @@ helm template wanderer "$chart" -n wanderer \
   -f "$root/examples/values-garmin-sync.yaml" \
   --set secret.existingSecret=external-secrets \
   --set search.persistence.existingClaim=search-v2 > "$out/search-resume.yaml"
+for component in database web; do
+  for replicas in 0 1; do
+    helm template wanderer "$chart" -n wanderer \
+      -f "$root/examples/values-garmin-sync.yaml" \
+      --set secret.existingSecret=external-secrets \
+      --set "$component.replicaCount=$replicas" > "$out/$component-$replicas.yaml"
+  done
+done
+helm template wanderer "$chart" -n wanderer \
+  -f "$root/examples/values-garmin-sync.yaml" \
+  --set secret.existingSecret=external-secrets \
+  --set web.replicaCount=2 > "$out/web-2.yaml"
 python3 - "$root/tests" "$out" <<'PY'
 import copy
 from pathlib import Path
@@ -175,6 +187,16 @@ def resources(name):
 
 assert resources("labels.yaml") == resources("next-labels.yaml"), "retained common labels must prevent unrelated upgrade changes"
 baseline = resources("search-default.yaml")
+for component, kind in (("database", "StatefulSet"), ("web", "Deployment")):
+    key = (kind, f"wanderer-{component}")
+    assert baseline[key]["spec"]["replicas"] == 1, f"{component} must default to one replica"
+    assert resources(f"{component}-1.yaml") == baseline, f"explicit {component} replica one must preserve defaults"
+    expected = copy.deepcopy(baseline)
+    expected[key]["spec"]["replicas"] = 0
+    assert resources(f"{component}-0.yaml") == expected, f"maintenance must change only {component} replica count and retain PVCs"
+expected = copy.deepcopy(baseline)
+expected[("Deployment", "wanderer-web")]["spec"]["replicas"] = 2
+assert resources("web-2.yaml") == expected, "existing web replica counts above one must remain supported"
 expected = copy.deepcopy(baseline)
 expected[("StatefulSet", "wanderer-search")]["spec"]["replicas"] = 0
 assert resources("search-maintenance.yaml") == expected, "maintenance must change only search replica count and retain its PVC"
@@ -198,6 +220,27 @@ if helm template wanderer "$chart" -n wanderer \
   echo 'expected a string search replica count to fail' >&2
   exit 1
 fi
+
+for component in database web; do
+  invalid_replicas=(-1 0.5 false)
+  if [ "$component" = database ]; then invalid_replicas+=(2); fi
+  for replicas in "${invalid_replicas[@]}"; do
+    if helm template wanderer "$chart" -n wanderer \
+      -f "$root/examples/values-garmin-sync.yaml" \
+      --set "$component.replicaCount=$replicas" >"$out/invalid-replicas.log" 2>&1; then
+      printf 'expected invalid %s replica count to fail: %s\n' "$component" "$replicas" >&2
+      exit 1
+    fi
+    grep -Eq "$component[./]replicaCount" "$out/invalid-replicas.log"
+  done
+  if helm template wanderer "$chart" -n wanderer \
+    -f "$root/examples/values-garmin-sync.yaml" \
+    --set-string "$component.replicaCount=0" >"$out/invalid-replicas.log" 2>&1; then
+    printf 'expected a string %s replica count to fail\n' "$component" >&2
+    exit 1
+  fi
+  grep -Eq "$component[./]replicaCount" "$out/invalid-replicas.log"
+done
 
 helm package "$chart" --destination "$out"
 chart_version=$(python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["version"])' "$chart/Chart.yaml")

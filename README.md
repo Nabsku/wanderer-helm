@@ -229,6 +229,12 @@ Before changing `web.image.tag`, `database.image.tag`, or the database image dig
 
 Run PocketBase and Meilisearch with one replica each. Do not add an HPA or more replicas to them. Web replicas greater than one require shared RWX upload storage and a tested watcher strategy; the default `Recreate` strategy avoids RWO attach races.
 
+For planned offline maintenance, `database.replicaCount`, `search.replicaCount`,
+and `web.replicaCount` accept `0`. Each still defaults to `1`. Setting one to
+zero changes only that workload's replica count and retains its PVCs; it does
+not suspend the Garmin CronJob or coordinate dependent workloads. Restore the
+replica count after maintenance.
+
 ## Update automation
 
 The repository receives updates through separate, reviewable pull requests:
